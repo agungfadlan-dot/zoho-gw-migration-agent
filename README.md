@@ -8,14 +8,13 @@ A secure, automated, and passwordless migration agent built for Zoho Global Admi
 
 Because global admin credentials hold elevated access across both organizations, the agent is engineered around strict zero-trust and least-privilege security principles:
 
-```mermaid
 flowchart TD
     subgraph AdminWorkstation["Admin Local Workstation (Isolated Security Enclave)"]
-        MaskedPrompt[Masked Interactive Ingestion] --> Vault[AES-256-GCM Ephemeral Memory Vault<br/>• Session TTL<br/>• Zero Plaintext on Disk<br/>• Explicit Memory Zeroing]
-        Vault --> ScopeAuditor[Pre-Flight Scope & DC Verifier<br/>• Rejects Write/Delete Scopes<br/>• Validates Regional Endpoints]
-        ScopeAuditor --> Pipeline[In-Memory Direct Streaming Buffer<br/>• Zero RFC822 Disk Spooling]
-        Pipeline --> Sanitizer[Regex Output & Log Sanitizer<br/>• Strips Tokens, Private Keys, PII]
-        Pipeline --> Checkpoint[(Checkpoint Store SQLite)<br/>• Nonces, Checksums & Status Only]
+        MaskedPrompt[Masked Interactive Ingestion] --> Vault["AES-256-GCM Ephemeral Memory Vault<br/>• Session TTL<br/>• Zero Plaintext on Disk<br/>• Explicit Memory Zeroing"]
+        Vault --> ScopeAuditor["Pre-Flight Scope & DC Verifier<br/>• Rejects Write/Delete Scopes<br/>• Validates Regional Endpoints"]
+        ScopeAuditor --> Pipeline["In-Memory Direct Streaming Buffer<br/>• Zero RFC822 Disk Spooling"]
+        Pipeline --> Sanitizer["Regex Output & Log Sanitizer<br/>• Strips Tokens, Private Keys, PII"]
+        Pipeline --> Checkpoint[("(Checkpoint Store SQLite)<br/>• Nonces, Checksums & Status Only")]
     end
 
     subgraph Zoho["Zoho Organization"]
@@ -24,9 +23,8 @@ flowchart TD
     end
 
     subgraph Google["Google Workspace Domain"]
-        Pipeline -->|Service Account + Domain-Wide Delegation| GAPI[Google Workspace APIs<br/>Admin SDK + Gmail API + People + Calendar]
+        Pipeline -->|Service Account + Domain-Wide Delegation| GAPI["Google Workspace APIs<br/>Admin SDK + Gmail API + People + Calendar"]
     end
-```
 
 ### Core Security Guarantees:
 1. **Passwordless Admin-to-Admin Migration**:
