@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Migration data & sensitive local state
+*.db
+*.csv
+*.json
+!pyproject.toml
+
+# OS Files
+.DS_Store

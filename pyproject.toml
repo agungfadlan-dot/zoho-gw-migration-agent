@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zoho-gw-migration-agent"
+version = "1.0.0"
+description = "Enterprise Zoho to Google Workspace Passwordless Migration Agent with Hardened Security Enclave"
+authors = [{ name = "Enterprise Engineering" }]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "cryptography>=41.0.0",
+]
+
+[project.scripts]
+zoho-migrate = "main:main"
