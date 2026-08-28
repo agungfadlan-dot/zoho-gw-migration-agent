@@ -94,9 +94,35 @@ Simulates discovery, scope validation, and migration planning without writing to
 python3 main.py --dry-run
 ```
 
-### 3. Run Live Migration
+### 3. Run Live Migration (Full Org or Pilot Batch)
+
+#### Option A: Interactive Mode (Prompt will ask for Pilot or Full Migration)
 ```bash
 python3 main.py
+```
+The agent scans all users and displays an interactive scope menu:
+```text
+Select migration scope:
+  [1] Migrate ALL organization users (Full Migration)
+  [2] Quick Pilot Test: Migrate first 1 user
+  [3] Quick Pilot Test: Migrate first 5 users
+  [4] Select specific users by Email / UPN (comma-separated)
+  [5] Select users by list index numbers (e.g. 1, 3, 5)
+```
+
+#### Option B: Target Specific Users by Email (UPN)
+```bash
+python3 main.py --users alice@yourcompany.com,bob@yourcompany.com
+```
+
+#### Option C: Run a Quick Pilot Test (First N Users)
+```bash
+python3 main.py --pilot 5
+```
+
+#### Option D: Target Users from a Text File
+```bash
+python3 main.py --users-file pilot_users.txt
 ```
 
 ### 4. Resumability & Checkpointing

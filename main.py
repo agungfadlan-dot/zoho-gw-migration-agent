@@ -33,6 +33,24 @@ def parse_args():
         help="Simulate the migration without writing data to Google Workspace"
     )
     parser.add_argument(
+        "--users",
+        type=str,
+        default=None,
+        help="Comma-separated list of specific user emails/UPNs to migrate (e.g. --users user1@domain.com,user2@domain.com)"
+    )
+    parser.add_argument(
+        "--users-file",
+        type=str,
+        default=None,
+        help="Path to a text file containing target user emails (one per line)"
+    )
+    parser.add_argument(
+        "--pilot",
+        type=int,
+        default=None,
+        help="Limit migration to the first N discovered users for pilot testing (e.g. --pilot 5)"
+    )
+    parser.add_argument(
         "--checkpoint-db",
         type=str,
         default="migration_checkpoint.db",
@@ -64,7 +82,10 @@ def main():
             workflow = MigrationWorkflow(
                 vault=vault,
                 checkpoint_db_path=args.checkpoint_db,
-                dry_run=args.dry_run
+                dry_run=args.dry_run,
+                target_users_str=args.users,
+                users_file=args.users_file,
+                pilot_count=args.pilot
             )
 
             # Step 3: Pre-flight Verification
