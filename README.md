@@ -179,6 +179,41 @@ python3 main.py --pilot 5
 python3 main.py --users-file pilot_users.txt
 ```
 
+---
+
+## ☁️ Deploying to Google Cloud Run (Serverless Web App)
+
+The agent is fully containerized as a lightweight serverless web app (<80 MB container) with zero external Node.js/npm dependencies:
+
+### 1. One-Click Deploy via Google Cloud SDK
+```bash
+chmod +x deploy_cloudrun.sh
+./deploy_cloudrun.sh
+```
+Or deploy directly with `gcloud`:
+```bash
+gcloud run deploy zoho-gw-migration-agent \
+    --source . \
+    --region asia-southeast2 \
+    --platform managed \
+    --cpu 1 \
+    --memory 2Gi \
+    --timeout 3600 \
+    --no-allow-unauthenticated
+```
+
+### 2. Run via Docker Locally
+```bash
+# Build lightweight Docker image
+docker build -t zoho-gw-migration-agent .
+
+# Run container on port 8080
+docker run -d -p 8080:8080 --name migration-agent zoho-gw-migration-agent
+```
+Open `http://localhost:8080` in your browser.
+
+---
+
 ### 4. Interactive Live Pause, Resume & Laptop Mobility
 When running locally on an administrator machine, you can freely pause migration to relocate the computer:
 - **Web UI**: Click the **"⏸️ Pause Migration"** button at any time. The progress bar transitions to a paused striped state and worker threads halt safely at their current item boundary. Click **"▶️ Resume Migration"** once settled to continue without missing or duplicating any records.
