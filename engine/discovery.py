@@ -6,8 +6,9 @@ and contacts to prepare migration plan and verify Google Workspace readiness.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-from connectors.zoho_client import ZohoAdminClient
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
+if TYPE_CHECKING:
+    from connectors.zoho_client import ZohoAdminClient
 from connectors.base import ZohoUser
 from security.sanitizer import setup_secure_logger
 

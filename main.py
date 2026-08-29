@@ -19,6 +19,7 @@ from security.sanitizer import setup_secure_logger
 from agent.console import banner, Colors
 from agent.interactive import collect_zoho_credentials, collect_google_credentials
 from agent.workflow import MigrationWorkflow
+from ui.server import run_ui_server
 
 logger = setup_secure_logger("main")
 
@@ -26,6 +27,17 @@ logger = setup_secure_logger("main")
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Zoho to Google Workspace Migration Agent (Passwordless Admin-to-Admin Architecture)"
+    )
+    parser.add_argument(
+        "--ui", "--gui", "--web",
+        action="store_true",
+        help="Launch the local Web UI in your browser for guided visual migration"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Local port for Web UI server (default: 8080)"
     )
     parser.add_argument(
         "--dry-run",
@@ -66,6 +78,11 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    if args.ui:
+        run_ui_server(port=args.port, open_browser=True)
+        return
+
     banner()
 
     if args.dry_run:

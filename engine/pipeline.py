@@ -16,9 +16,10 @@ Security & Reliability:
 
 import hashlib
 import time
-from typing import List, Dict, Optional, Callable, Any
-from connectors.zoho_client import ZohoAdminClient
-from connectors.google_client import GoogleWorkspaceAdminClient
+from typing import List, Dict, Optional, Callable, Any, TYPE_CHECKING
+if TYPE_CHECKING:
+    from connectors.zoho_client import ZohoAdminClient
+    from connectors.google_client import GoogleWorkspaceAdminClient
 from connectors.base import ZohoUser, MailFolder, MailMessageMeta
 from engine.checkpoint import CheckpointStore
 from security.sanitizer import setup_secure_logger

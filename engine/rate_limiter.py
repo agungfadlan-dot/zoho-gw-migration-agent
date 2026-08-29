@@ -67,14 +67,27 @@ def retry_with_backoff(
     initial_delay: float = 1.0,
     backoff_factor: float = 2.0,
     max_delay: float = 30.0,
-    retryable_exceptions: tuple = (Exception,)
+    retryable_exceptions: tuple = (Exception,),
+    pause_controller: Optional[Any] = None
 ) -> T:
-    """Executes a function with exponential backoff and jitter."""
+    """Executes a function with exponential backoff and jitter, respecting PauseController."""
     attempt = 0
     while attempt < max_retries:
+        if pause_controller:
+            pause_controller.wait_if_paused()
+
         try:
             return func()
         except retryable_exceptions as exc:
+            # Check if network disconnection error
+            if pause_controller:
+                from engine.pause_controller import NetworkWatchdog
+                if NetworkWatchdog.is_network_error(exc):
+                    pause_controller.handle_network_disconnect(str(exc))
+                    pause_controller.wait_if_paused()
+                    # Do not count network disconnection towards standard API retry quota
+                    continue
+
             attempt += 1
             if attempt >= max_retries:
                 raise exc

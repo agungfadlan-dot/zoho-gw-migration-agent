@@ -362,7 +362,7 @@ class GoogleWorkspaceAdminClient:
         # Gmail import upload endpoint (Multipart upload)
         upload_url = (
             f"https://gmail.googleapis.com/upload/gmail/v1/users/{user_email}/messages/import"
-            f"?internalDateSource=dateHeader"
+            f"?internalDateSource=dateHeader&neverMarkSpam=true&processForCalendar=false"
         )
 
         metadata: Dict[str, Any] = {
@@ -400,6 +400,9 @@ class GoogleWorkspaceAdminClient:
             scopes=scopes,
         )
         return res
+
+    # Alias for explicit naming
+    import_message_rfc822 = import_message
 
     # --- Google Calendar Events ---
 

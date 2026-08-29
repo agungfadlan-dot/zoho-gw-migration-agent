@@ -1,30 +1,19 @@
 """
 Migration Workflow Orchestrator.
-
-Guides the Administrator through:
-1. Security & Scope Pre-Flight Verification
-2. Organization Discovery & Volume Assessment
-3. Stage 1: Google Workspace User Provisioning
-4. Stage 2: Calendar Migration
-5. Stage 3: Contacts Migration
-6. Stage 4: Mailbox Streaming Migration
-7. Final Audit & Resumability Summary
+Coordinates specialized Atomic Agents via MigrationSupervisor.
 """
 
 import os
 import sys
 import json
-import csv
 import time
 from typing import Optional, Dict, Any, List
 
 from security.vault import EphemeralVault
 from security.sanitizer import setup_secure_logger
-from connectors.zoho_client import ZohoAdminClient
-from connectors.google_client import GoogleWorkspaceAdminClient
-from engine.checkpoint import CheckpointStore
-from engine.discovery import DiscoveryEngine, OrganizationAssessmentReport
-from engine.pipeline import MigrationPipeline
+from engine.discovery import OrganizationAssessmentReport
+from atomic_agents.supervisor import MigrationSupervisor
+from engine.pause_controller import PauseController, PauseState
 from agent.console import (
     banner,
     print_stage_header,
@@ -38,7 +27,10 @@ logger = setup_secure_logger("workflow_orchestrator")
 
 
 class MigrationWorkflow:
-    """Master workflow orchestrator."""
+    """
+    Master workflow orchestrator.
+    Delegates pre-flight, discovery, provisioning, and synchronization to Atomic Agents.
+    """
 
     def __init__(
         self,
@@ -56,21 +48,25 @@ class MigrationWorkflow:
         self.users_file = users_file
         self.pilot_count = pilot_count
 
-        self.checkpoint = CheckpointStore(db_path=checkpoint_db_path)
         self.progress_cb = TerminalProgressCallback()
 
-        domain = self.vault.retrieve("zoho_domain") or "zoho.com"
-        admin_email = self.vault.retrieve("google_admin_email")
+        def on_cli_state_change(state: PauseState, reason: str):
+            if state == PauseState.PAUSED_NETWORK_LOST:
+                print(f"\n{Colors.YELLOW}{Colors.BOLD}⚠️  NETWORK CONNECTION LOST!{Colors.RESET}")
+                print(f"{Colors.YELLOW}Migration paused automatically. Watchdog is monitoring connection and will auto-resume once restored...{Colors.RESET}")
+            elif state == PauseState.PAUSED_MANUAL:
+                print(f"\n{Colors.YELLOW}⏸️  Migration paused: {reason}{Colors.RESET}")
+            elif state == PauseState.RUNNING:
+                print(f"\n{Colors.GREEN}▶️  Connection restored / Migration resumed.{Colors.RESET}")
 
-        self.zoho_client = ZohoAdminClient(vault=self.vault, domain=domain)
-        self.google_client = GoogleWorkspaceAdminClient(vault=self.vault, admin_subject_email=admin_email)
-        self.discovery = DiscoveryEngine(self.zoho_client)
-        self.pipeline = MigrationPipeline(
-            zoho_client=self.zoho_client,
-            google_client=self.google_client,
-            checkpoint_store=self.checkpoint,
+        self.pause_controller = PauseController(on_state_change=on_cli_state_change)
+
+        # Initialize the Atomic Migration Supervisor
+        self.supervisor = MigrationSupervisor(
+            vault=self.vault,
+            checkpoint_db=self.checkpoint_db_path,
             dry_run=self.dry_run,
-            progress_callback=self.progress_cb
+            pause_controller=self.pause_controller
         )
 
     def select_target_users(self, all_users: List[Any], auto_confirm: bool = False) -> List[Any]:
@@ -102,78 +98,74 @@ class MigrationWorkflow:
                 ]
                 if selected:
                     return selected
-                print(f"{Colors.YELLOW}Warning: No users from file '{self.users_file}' matched discovered users.{Colors.RESET}")
+                print(f"{Colors.YELLOW}Warning: No valid user emails found in '{self.users_file}'.{Colors.RESET}")
 
-        # 3. Specified via --pilot count
+        # 3. Specified via --pilot flag (e.g. --pilot 5)
         if self.pilot_count and self.pilot_count > 0:
             return all_users[:self.pilot_count]
 
-        # 4. Interactive Selection Menu (if not auto-confirm)
-        if not auto_confirm and not self.dry_run and len(all_users) > 1:
-            print(f"\n{Colors.BOLD}{Colors.CYAN}--- Target User Scope Selection ---{Colors.RESET}")
+        # 4. Interactive selection menu if running in interactive terminal
+        if not auto_confirm:
+            print(f"\n{Colors.CYAN}{Colors.BOLD}--- Target User Scope Selection ---{Colors.RESET}")
+            print(f"Discovered {len(all_users)} total Zoho organization user(s).")
             print("Select migration scope:")
             print(f"  [1] Migrate ALL organization users ({len(all_users)} users) - Full Migration")
-            print("  [2] Quick Pilot Test: Migrate first 1 user")
-            print("  [3] Quick Pilot Test: Migrate first 5 users")
-            print("  [4] Select specific users by Email / UPN (comma-separated)")
-            print("  [5] Select users by list index numbers (e.g., 1, 3, 5)")
+            print(f"  [2] Quick Pilot Test: Migrate first 1 user")
+            print(f"  [3] Quick Pilot Test: Migrate first {min(5, len(all_users))} users")
+            print(f"  [4] Select specific users by Email / UPN (comma-separated)")
+            print(f"  [5] Select users by list index numbers (e.g., 1, 3, 5)")
 
-            choice = input("Enter choice [1-5] (default: 1 [All Users]): ").strip()
+            choice = input(f"{Colors.BOLD}Enter choice [1-5] (Default: 1): {Colors.RESET}").strip()
             if choice == "2":
                 return all_users[:1]
             elif choice == "3":
                 return all_users[:min(5, len(all_users))]
             elif choice == "4":
-                raw_emails = input("Enter user emails (comma-separated): ").strip()
-                targets = set(e.strip().lower() for e in raw_emails.split(",") if e.strip())
-                matched = [u for u in all_users if u.email.lower() in targets or any(a.lower() in targets for a in u.aliases)]
-                if matched:
-                    return matched
-                print(f"{Colors.YELLOW}No matching users found. Defaulting to all users.{Colors.RESET}")
+                raw_emails = input("Enter email address(es) to migrate (comma-separated): ").strip()
+                if raw_emails:
+                    targets = set(e.strip().lower() for e in raw_emails.split(",") if e.strip())
+                    selected = [u for u in all_users if u.email.lower() in targets or any(a.lower() in targets for a in u.aliases)]
+                    if selected:
+                        return selected
+                    print(f"{Colors.YELLOW}No matching users found. Defaulting to all users.{Colors.RESET}")
             elif choice == "5":
-                raw_idx = input(f"Enter user numbers between 1 and {len(all_users)} (e.g. 1, 2, 4): ").strip()
-                indices = []
-                for part in raw_idx.replace(",", " ").split():
-                    if part.isdigit() and 1 <= int(part) <= len(all_users):
-                        indices.append(int(part) - 1)
-                if indices:
-                    return [all_users[i] for i in sorted(set(indices))]
+                raw_indices = input("Enter user index numbers (e.g. 1, 3, 5): ").strip()
+                if raw_indices:
+                    indices = []
+                    for part in raw_indices.replace(" ", "").split(","):
+                        if part.isdigit():
+                            idx = int(part) - 1
+                            if 0 <= idx < len(all_users):
+                                indices.append(idx)
+                    if indices:
+                        return [all_users[i] for i in sorted(set(indices))]
 
         return all_users
 
     def run_preflight(self) -> bool:
-        """Step 1: Runs security checks and connectivity tests."""
-        print_stage_header(1, "Pre-flight Security & Connectivity Verification", "Validating API tokens, scopes, and tenant endpoints.")
+        """Step 1: Executes Atomic Agent 1 (SecurityAuditorAgent)."""
+        print_stage_header(1, "Pre-flight Security & Connectivity Verification", "Validating API tokens, scopes, and tenant endpoints via SecurityAuditorAgent.")
 
-        # Test Zoho connection
-        print("1. Testing Zoho Admin API connectivity...")
+        domain = self.vault.retrieve("zoho_domain") or "zoho.com"
         try:
-            zoho_info = self.zoho_client.test_connection()
-            print(f"   {Colors.GREEN}✓ Connected to Zoho Org: {zoho_info.get('org_name')} (ID: {zoho_info.get('org_id')}){Colors.RESET}")
+            report = self.supervisor.run_security_audit(zoho_domain=domain)
+            for check in report.checks_passed:
+                print(f"   {Colors.GREEN}✓ {check}{Colors.RESET}")
+            for warning in report.warnings:
+                print(f"   {Colors.YELLOW}⚠ {warning}{Colors.RESET}")
+            print(f"\n{Colors.GREEN}{Colors.BOLD}>>> Pre-flight security & scope checks passed successfully.{Colors.RESET}")
+            return True
         except Exception as e:
-            print(f"   {Colors.RED}✗ Zoho connection failed: {e}{Colors.RESET}")
+            print(f"   {Colors.RED}✗ Pre-flight security verification failed: {e}{Colors.RESET}")
             return False
-
-        # Test Google connection
-        print("2. Testing Google Workspace Service Account & DWD...")
-        try:
-            google_info = self.google_client.test_connection()
-            if google_info.get("status") == "connected":
-                print(f"   {Colors.GREEN}✓ Google Workspace DWD verified for {google_info.get('client_email')}{Colors.RESET}")
-            else:
-                print(f"   {Colors.YELLOW}⚠ Google Workspace check returned warning: {google_info.get('error')}{Colors.RESET}")
-        except Exception as e:
-            print(f"   {Colors.RED}✗ Google Workspace verification failed: {e}{Colors.RESET}")
-            return False
-
-        print(f"\n{Colors.GREEN}{Colors.BOLD}>>> Pre-flight checks passed successfully.{Colors.RESET}")
-        return True
 
     def run_discovery(self) -> OrganizationAssessmentReport:
-        """Step 2: Scans Zoho Organization and renders assessment table."""
-        print_stage_header(2, "Organization Discovery & Volume Assessment", "Scanning directory users, mailboxes, calendars, and address books.")
+        """Step 2: Executes Atomic Agent 2 (DiscoveryAssessmentAgent)."""
+        print_stage_header(2, "Organization Discovery & Volume Assessment", "Scanning directory topology, estimating storage, and analyzing pilot candidates.")
 
-        report = self.discovery.run_assessment(sample_items=True)
+        domain = self.vault.retrieve("zoho_domain") or "zoho.com"
+        discovery_result = self.supervisor.run_discovery(zoho_domain=domain, sample_items=True)
+        report = discovery_result.report
 
         headers = ["#", "Email", "Display Name", "Aliases", "Folders", "Est. Messages", "Est. Storage", "Events", "Contacts"]
         rows = []
@@ -195,14 +187,19 @@ class MigrationWorkflow:
         print(f"  • Total Users: {report.total_users} ({report.active_users} active)")
         print(f"  • Estimated Messages: ~{report.total_estimated_messages:,}")
         print(f"  • Estimated Data Size: ~{report.total_estimated_storage_mb:.2f} MB")
+
+        if discovery_result.recommended_pilot_cohort:
+            pilot_emails = [u.email for u in discovery_result.recommended_pilot_cohort]
+            print(f"\n{Colors.CYAN}{Colors.BOLD}💡 AI Recommended Pilot Cohort (Lowest Risk): {', '.join(pilot_emails)}{Colors.RESET}")
+
         return report
 
     def execute_migration(self, report: OrganizationAssessmentReport, auto_confirm: bool = False) -> None:
-        """Executes full or pilot migration across all 4 stages."""
-        # Fetch full Zoho user objects
-        all_zoho_users = self.zoho_client.list_organization_users()
+        """Executes full or pilot migration across Atomic Agents 3, 4, 5, and 6."""
+        domain = self.vault.retrieve("zoho_domain") or "zoho.com"
+        zoho_client = self.supervisor.get_zoho_client(domain=domain)
+        all_zoho_users = zoho_client.list_organization_users()
 
-        # Filter target users for pilot or full migration
         target_users = self.select_target_users(all_zoho_users, auto_confirm=auto_confirm)
 
         is_pilot = len(target_users) < len(all_zoho_users)
@@ -223,36 +220,28 @@ class MigrationWorkflow:
                 print(f"{Colors.RED}Migration aborted by Administrator.{Colors.RESET}")
                 return
 
-        # Stage 1: User Provisioning
-        print_stage_header(3, "Stage 1: Google Workspace User Provisioning", "Creating accounts with secure temporary passwords & aliases.")
-        provision_results = self.pipeline.run_user_provisioning(target_users)
+        # Stage 1: User Provisioning (Atomic Agent 3)
+        print_stage_header(3, "Stage 1: Google Workspace User Provisioning", "Executing UserProvisioningAgent.")
+        prov_summary = self.supervisor.run_stage_provisioning(target_users)
+        provision_results = prov_summary.results
+        if prov_summary.credentials_csv_path:
+            print(f"\n{Colors.BOLD}{Colors.GREEN}✓ One-time temporary passwords saved to '{prov_summary.credentials_csv_path}'.{Colors.RESET}")
+            print(f"{Colors.RED}{Colors.BOLD}WARNING: Distribute these credentials securely to users and delete this file.{Colors.RESET}")
 
-        # Export temporary passwords securely if any were created
-        newly_created = [r for r in provision_results if r.get("status") == "CREATED" and "temp_password" in r]
-        if newly_created and not self.dry_run:
-            creds_file = f"provisioned_credentials_{int(time.time())}.csv"
-            try:
-                with open(creds_file, "w", newline="", encoding="utf-8") as f:
-                    writer = csv.writer(f)
-                    writer.writerow(["Email", "Temporary_Password", "ChangePasswordAtNextLogin"])
-                    for u in newly_created:
-                        writer.writerow([u["email"], u["temp_password"], "TRUE"])
-                print(f"\n{Colors.BOLD}{Colors.GREEN}✓ One-time temporary passwords saved to '{creds_file}'.{Colors.RESET}")
-                print(f"{Colors.RED}{Colors.BOLD}WARNING: Distribute these credentials securely to users and delete this file.{Colors.RESET}")
-            except Exception as e:
-                logger.error(f"Could not export credentials CSV: {e}")
+        # Stage 2: Calendar Migration (Atomic Agent 4)
+        print_stage_header(4, "Stage 2: Google Calendar Migration", "Executing CalendarMigrationAgent.")
+        cal_summary_obj = self.supervisor.run_stage_calendar(target_users, zoho_domain=domain, progress_callback=self.progress_cb)
+        cal_summary = cal_summary_obj.to_dict()
 
-        # Stage 2: Calendar Migration
-        print_stage_header(4, "Stage 2: Google Calendar Migration", "Importing calendar events, recurrence, and attendee links.")
-        cal_summary = self.pipeline.run_calendar_migration(target_users)
+        # Stage 3: Contacts Migration (Atomic Agent 5)
+        print_stage_header(5, "Stage 3: Google Contacts Migration", "Executing ContactsMigrationAgent.")
+        cont_summary_obj = self.supervisor.run_stage_contacts(target_users, zoho_domain=domain, progress_callback=self.progress_cb)
+        cont_summary = cont_summary_obj.to_dict()
 
-        # Stage 3: Contacts Migration
-        print_stage_header(5, "Stage 3: Google Contacts Migration", "Importing address books, emails, and phone numbers via People API.")
-        cont_summary = self.pipeline.run_contacts_migration(target_users)
-
-        # Stage 4: Mailbox Streaming Migration
-        print_stage_header(6, "Stage 4: Mailbox & Messages Streaming", "Direct memory-buffered streaming of folders & RFC822 messages to Gmail.")
-        mail_summary = self.pipeline.run_mailbox_migration(target_users)
+        # Stage 4: Mailbox Streaming Migration (Atomic Agent 6)
+        print_stage_header(6, "Stage 4: Mailbox & Messages Streaming", "Executing MailboxStreamingAgent.")
+        mail_summary_obj = self.supervisor.run_stage_mailbox(target_users, zoho_domain=domain, progress_callback=self.progress_cb)
+        mail_summary = mail_summary_obj.to_dict()
 
         # Final Summary
         self.render_completion_summary(report, provision_results, cal_summary, cont_summary, mail_summary)
@@ -266,9 +255,9 @@ class MigrationWorkflow:
         mail_summary: Dict[str, Any],
     ) -> None:
         """Prints final completion report and audit status."""
-        print_stage_header(7, "Migration Final Audit & Completion Summary", "Complete status across all migrated entities.")
+        print_stage_header(7, "Migration Final Audit & Completion Summary", "Complete status across all atomic agents.")
 
-        db_stats = self.checkpoint.get_summary_stats()
+        db_stats = self.supervisor.checkpoint_store.get_summary_stats()
         print(f"{Colors.BOLD}{Colors.GREEN}================================================================================{Colors.RESET}")
         print(f"{Colors.BOLD}{Colors.GREEN}                  MIGRATION RUN COMPLETED SUCCESSFULLY                          {Colors.RESET}")
         print(f"{Colors.BOLD}{Colors.GREEN}================================================================================{Colors.RESET}\n")

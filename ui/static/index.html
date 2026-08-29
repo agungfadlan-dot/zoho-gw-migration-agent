@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zoho to Google Workspace Migration Agent</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Header -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Zoho ➔ Google Workspace Migration Agent</h1>
+          <span class="subtitle">Passwordless Admin-to-Admin Architecture</span>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <div class="badge badge-secure">
+          <span class="dot"></span>
+          <span>In-Memory AES-256 Vault</span>
+        </div>
+        <button id="btn-reset-session" class="btn btn-ghost btn-sm" title="Clear credentials & reset">
+          Reset Session
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Step Wizard Navigation -->
+  <nav class="wizard-stepper">
+    <div class="stepper-container">
+      <div class="step-item active" data-step="1">
+        <div class="step-circle">1</div>
+        <div class="step-label">Credentials & Setup</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-item" data-step="2">
+        <div class="step-circle">2</div>
+        <div class="step-label">Security Check</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-item" data-step="3">
+        <div class="step-circle">3</div>
+        <div class="step-label">Discovery & Sizing</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-item" data-step="4">
+        <div class="step-circle">4</div>
+        <div class="step-label">Pilot & Scope</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step-item" data-step="5">
+        <div class="step-circle">5</div>
+        <div class="step-label">Live Migration</div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content Container -->
+  <main class="main-content">
+    <div id="alert-container"></div>
+
+    <!-- ========================================== -->
+    <!-- STEP 1: CREDENTIALS & SETUP -->
+    <!-- ========================================== -->
+    <section id="step-1" class="step-content active">
+      <div class="section-header">
+        <h2>Step 1: Admin Credentials & Connection Setup</h2>
+        <p class="section-desc">
+          Enter your Zoho OAuth app credentials and Google Service Account key. All secrets are stored exclusively in temporary encrypted memory.
+        </p>
+      </div>
+
+      <!-- Guidance Accordion -->
+      <details class="guidance-card">
+        <summary>
+          <span class="guidance-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            How to get these credentials (Click to expand)
+          </span>
+        </summary>
+        <div class="guidance-body">
+          <div class="guidance-col">
+            <h4>Zoho API Console (Source)</h4>
+            <ol>
+              <li>Go to <a href="https://api-console.zoho.com" target="_blank">api-console.zoho.com</a> and add a <strong>Server-based Application</strong>.</li>
+              <li>Add read-only scopes: <code>ZohoMail.accounts.READ</code>, <code>ZohoMail.messages.READ</code>, <code>ZohoDirectory.user.READ</code>, <code>ZohoCalendar.event.READ</code>, <code>ZohoContacts.user.READ</code>.</li>
+              <li>Generate Client ID, Client Secret, and Refresh Token.</li>
+            </ol>
+          </div>
+          <div class="guidance-col">
+            <h4>Google Cloud & DWD (Destination)</h4>
+            <ol>
+              <li>In <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a>, create a Service Account & download JSON Key.</li>
+              <li>Enable <strong>Domain-Wide Delegation (DWD)</strong>.</li>
+              <li>In <a href="https://admin.google.com" target="_blank">Google Admin Console</a> &gt; Security &gt; API Controls, authorize the Client ID with Directory, Gmail, Calendar, and Contacts scopes.</li>
+            </ol>
+          </div>
+        </div>
+      </details>
+
+      <form id="form-credentials" class="grid-2-col">
+        <!-- Zoho Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-icon zoho-icon">Z</div>
+            <div>
+              <h3 class="card-title">Source: Zoho Organization</h3>
+              <p class="card-subtitle">Read-only OAuth 2.0 configuration</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="zoho-domain">Zoho Data Center Region *</label>
+            <select id="zoho-domain" class="form-control" required>
+              <option value="zoho.com">United States / Global (zoho.com)</option>
+              <option value="zoho.eu">European Union (zoho.eu)</option>
+              <option value="zoho.in">India (zoho.in)</option>
+              <option value="zoho.com.au">Australia (zoho.com.au)</option>
+              <option value="zoho.jp">Japan (zoho.jp)</option>
+              <option value="zoho.sa">Saudi Arabia (zoho.sa)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="zoho-client-id">Zoho Client ID *</label>
+            <input type="text" id="zoho-client-id" class="form-control" placeholder="1000.XXXXXXXXXX" required>
+          </div>
+          <div class="form-group">
+            <label for="zoho-client-secret">Zoho Client Secret *</label>
+            <div class="password-wrapper">
+              <input type="password" id="zoho-client-secret" class="form-control" placeholder="••••••••••••••••••••" required>
+              <button type="button" class="btn-toggle-pass" data-target="zoho-client-secret">👁️</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="zoho-refresh-token">Zoho Refresh Token *</label>
+            <div class="password-wrapper">
+              <input type="password" id="zoho-refresh-token" class="form-control" placeholder="1000.XXXXXXXXXX.XXXXXXXXXX" required>
+              <button type="button" class="btn-toggle-pass" data-target="zoho-refresh-token">👁️</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Google Workspace Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-icon google-icon">G</div>
+            <div>
+              <h3 class="card-title">Destination: Google Workspace</h3>
+              <p class="card-subtitle">Service Account with Domain-Wide Delegation</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="google-admin-email">Google Workspace Super Admin Email *</label>
+            <input type="email" id="google-admin-email" class="form-control" placeholder="admin@yourcompany.com" required>
+            <span class="input-hint">Admin email used as the subject identity for Directory operations.</span>
+          </div>
+          <div class="form-group">
+            <label>Google Service Account Key (.json) *</label>
+            <div id="sa-dropzone" class="dropzone">
+              <input type="file" id="sa-file-input" accept=".json" style="display:none">
+              <div class="dropzone-content">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <p id="dropzone-text"><strong>Click to upload</strong> or drag & drop your Service Account JSON file</p>
+                <span id="sa-filename-display" class="file-loaded-badge" style="display:none"></span>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="checkpoint-db">Checkpoint Database File</label>
+            <input type="text" id="checkpoint-db" class="form-control" value="migration_checkpoint.db">
+            <span class="input-hint">Tracks migration state for seamless resumption after network stops.</span>
+          </div>
+        </div>
+      </form>
+
+      <div class="action-footer">
+        <div></div>
+        <button id="btn-save-credentials" class="btn btn-primary btn-lg">
+          Save & Run Security Pre-Flight ➜
+        </button>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- STEP 2: SECURITY PRE-FLIGHT -->
+    <!-- ========================================== -->
+    <section id="step-2" class="step-content">
+      <div class="section-header">
+        <h2>Step 2: Security & Connectivity Pre-Flight Check</h2>
+        <p class="section-desc">
+          The <code>SecurityAuditorAgent</code> validates your API tokens, regional TLD, OAuth least-privilege scopes, and Domain-Wide Delegation connectivity.
+        </p>
+      </div>
+
+      <div id="preflight-status-card" class="card">
+        <div class="preflight-hero">
+          <div id="preflight-spinner" class="spinner"></div>
+          <div id="preflight-result-icon" class="status-icon" style="display:none"></div>
+          <div>
+            <h3 id="preflight-title">Running Security Diagnostics...</h3>
+            <p id="preflight-subtitle">Auditing scopes, regional endpoints, and DWD certificates</p>
+          </div>
+        </div>
+
+        <div id="preflight-details" class="preflight-details-list" style="display:none">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+
+      <div class="action-footer">
+        <button class="btn btn-secondary btn-back" data-target="1">⬅ Back to Setup</button>
+        <div class="flex-row gap-2">
+          <button id="btn-retest-preflight" class="btn btn-secondary">Re-run Check</button>
+          <button id="btn-proceed-discovery" class="btn btn-primary" disabled>
+            Proceed to Discovery & Sizing ➜
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- STEP 3: DISCOVERY & SIZING -->
+    <!-- ========================================== -->
+    <section id="step-3" class="step-content">
+      <div class="section-header">
+        <h2>Step 3: Organization Discovery & Volume Assessment</h2>
+        <p class="section-desc">
+          The <code>DiscoveryAssessmentAgent</code> inspects your Zoho organization topology, total user count, mailboxes, and items.
+        </p>
+      </div>
+
+      <div id="discovery-loading" class="card text-center py-5">
+        <div class="spinner mx-auto mb-3"></div>
+        <h3>Scanning Zoho Directory & Mailboxes...</h3>
+        <p class="text-muted">Analyzing mailbox volume, calendars, and address books</p>
+      </div>
+
+      <div id="discovery-dashboard" style="display:none">
+        <!-- Metric Cards -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <span class="metric-label">Total Users</span>
+            <span id="metric-users" class="metric-value">0</span>
+            <span class="metric-sub">Discovered in Directory</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Estimated Messages</span>
+            <span id="metric-messages" class="metric-value">0</span>
+            <span class="metric-sub">Across all mailboxes</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Storage Volume</span>
+            <span id="metric-size" class="metric-value">0 MB</span>
+            <span class="metric-sub">Estimated email data</span>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">Calendars & Contacts</span>
+            <span id="metric-items" class="metric-value">0</span>
+            <span class="metric-sub">Events & Address cards</span>
+          </div>
+        </div>
+
+        <!-- Pilot AI Recommendation Card -->
+        <div class="card alert-box alert-info">
+          <div class="alert-icon">💡</div>
+          <div>
+            <h4 class="alert-title">AI Pilot Cohort Recommendation</h4>
+            <p id="pilot-recommendation-text">
+              The agent identified safe candidate users for an initial pilot migration.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-footer">
+        <button class="btn btn-secondary btn-back" data-target="2">⬅ Back</button>
+        <button id="btn-proceed-scope" class="btn btn-primary" disabled>
+          Proceed to Pilot / Scope Selection ➜
+        </button>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- STEP 4: PILOT & SCOPE SELECTION -->
+    <!-- ========================================== -->
+    <section id="step-4" class="step-content">
+      <div class="section-header">
+        <h2>Step 4: Select Target Users & Migration Scope</h2>
+        <p class="section-desc">
+          Choose whether to run a quick 1-user or 5-user pilot test, select specific users, or migrate the entire organization.
+        </p>
+      </div>
+
+      <!-- Cohort Quick Select Buttons -->
+      <div class="card">
+        <h3 class="card-title mb-2">Quick Scope Presets</h3>
+        <div class="preset-buttons">
+          <button type="button" class="btn-preset active" data-mode="pilot-1">
+            <span class="preset-title">⭐ Quick Pilot (1 User)</span>
+            <span class="preset-desc">Test with 1 low-risk user first</span>
+          </button>
+          <button type="button" class="btn-preset" data-mode="pilot-5">
+            <span class="preset-title">👥 Pilot Cohort (5 Users)</span>
+            <span class="preset-desc">Test with first 5 pilot candidates</span>
+          </button>
+          <button type="button" class="btn-preset" data-mode="all">
+            <span class="preset-title">🏢 Full Migration (All Users)</span>
+            <span class="preset-desc">Migrate all organization users</span>
+          </button>
+          <button type="button" class="btn-preset" data-mode="custom">
+            <span class="preset-title">🎯 Custom Selection</span>
+            <span class="preset-desc">Pick specific users from list</span>
+          </button>
+        </div>
+
+        <div class="selection-summary">
+          <span id="selection-count-badge" class="badge badge-info">1 User Selected</span>
+          <div class="dry-run-toggle">
+            <label class="switch">
+              <input type="checkbox" id="chk-dry-run" checked>
+              <span class="slider round"></span>
+            </label>
+            <span class="dry-run-label">
+              <strong>Dry-Run Mode (Simulation)</strong>
+              <small class="text-muted">Simulate migration without writing to Google Workspace</small>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Selection Table -->
+      <div class="card">
+        <div class="table-toolbar">
+          <input type="text" id="user-table-search" class="form-control form-control-sm" placeholder="🔍 Search users by name or email...">
+          <div class="table-actions">
+            <button type="button" id="btn-select-all" class="btn btn-ghost btn-sm">Select All</button>
+            <button type="button" id="btn-deselect-all" class="btn btn-ghost btn-sm">Deselect All</button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="user-table">
+            <thead>
+              <tr>
+                <th width="40"><input type="checkbox" id="th-select-all"></th>
+                <th>Full Name</th>
+                <th>Zoho Email / UPN</th>
+                <th>Estimated Messages</th>
+                <th>Estimated Size</th>
+                <th>Pilot Rank</th>
+              </tr>
+            </thead>
+            <tbody id="user-table-body">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="action-footer">
+        <button class="btn btn-secondary btn-back" data-target="3">⬅ Back</button>
+        <button id="btn-start-migration" class="btn btn-success btn-lg">
+          🚀 Start Migration Now ➜
+        </button>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- STEP 5: LIVE MIGRATION & PROGRESS -->
+    <!-- ========================================== -->
+    <section id="step-5" class="step-content">
+      <div class="section-header">
+        <h2 id="migration-status-heading">Step 5: Live Migration in Progress</h2>
+        <p class="section-desc">
+          Direct in-memory RFC822 streaming, user account provisioning, calendar and contact synchronization.
+        </p>
+      </div>
+
+      <!-- Network Warning Banner -->
+      <div id="network-warning-banner" class="card alert-box alert-warning mb-3" style="display:none">
+        <div class="alert-icon">⚠️</div>
+        <div class="w-100">
+          <h4 class="alert-title" id="network-warning-title">Internet Connection Lost</h4>
+          <p id="network-warning-desc" class="mb-0">
+            Migration is safely paused. Background watchdog is monitoring connectivity and will automatically resume once the network is restored.
+          </p>
+        </div>
+      </div>
+
+      <!-- Manual Pause Notice Banner -->
+      <div id="pause-notice-banner" class="card alert-box alert-info mb-3" style="display:none">
+        <div class="alert-icon">⏸️</div>
+        <div class="w-100">
+          <h4 class="alert-title" id="pause-notice-title">Migration Paused</h4>
+          <p id="pause-notice-desc" class="mb-0">
+            Migration is safely held in memory. You can freely relocate your device or switch Wi-Fi networks without data loss. Click 'Resume Migration' to continue.
+          </p>
+        </div>
+      </div>
+
+      <!-- Progress Hero Card -->
+      <div class="card">
+        <div class="progress-hero">
+          <div class="progress-header">
+            <div>
+              <div class="flex-row gap-2 align-center">
+                <span id="active-stage-pill" class="badge badge-primary">Stage 1/4: User Provisioning</span>
+                <span id="paused-state-pill" class="badge badge-warning" style="display:none">PAUSED</span>
+              </div>
+              <h3 id="progress-detail-text" class="mt-1">Initializing migration pipeline...</h3>
+            </div>
+            <div class="progress-percent">
+              <span id="progress-pct-value">0</span>%
+            </div>
+          </div>
+
+          <div class="progress-track">
+            <div id="progress-bar-fill" class="progress-fill" style="width: 0%"></div>
+          </div>
+
+          <div class="progress-stats">
+            <div><strong>Active User:</strong> <span id="stat-active-user">-</span></div>
+            <div><strong>Items Synced:</strong> <span id="stat-items-count">0 / 0</span></div>
+            <div><strong>Throughput:</strong> <span id="stat-throughput">~2.5 msgs/s</span></div>
+          </div>
+
+          <!-- Migration Execution Controls (Pause / Resume / Cancel) -->
+          <div class="migration-controls mt-3 pt-3 border-top flex-row justify-between align-center">
+            <div class="flex-row gap-2">
+              <button id="btn-pause-migration" class="btn btn-warning btn-sm" type="button">
+                ⏸️ Pause Migration
+              </button>
+              <button id="btn-resume-migration" class="btn btn-success btn-sm" type="button" style="display:none">
+                ▶️ Resume Migration
+              </button>
+              <button id="btn-cancel-migration" class="btn btn-danger btn-sm" type="button">
+                🛑 Cancel
+              </button>
+            </div>
+            <span id="pause-status-hint" class="text-muted text-sm">Safe to pause anytime when moving laptops or switching networks.</span>
+          </div>
+        </div>
+
+        <!-- Stage Timeline Indicators -->
+        <div class="stage-timeline">
+          <div class="timeline-step" id="stage-ind-prov">
+            <div class="timeline-dot">1</div>
+            <span>User Provisioning</span>
+          </div>
+          <div class="timeline-step" id="stage-ind-cal">
+            <div class="timeline-dot">2</div>
+            <span>Calendar Migration</span>
+          </div>
+          <div class="timeline-step" id="stage-ind-cont">
+            <div class="timeline-dot">3</div>
+            <span>Contacts Migration</span>
+          </div>
+          <div class="timeline-step" id="stage-ind-mail">
+            <div class="timeline-dot">4</div>
+            <span>Mailbox Streaming</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Completion Summary (Hidden until finished) -->
+      <div id="completion-summary-card" class="card alert-box alert-success" style="display:none">
+        <div class="alert-icon">🎉</div>
+        <div class="w-100">
+          <h3 class="alert-title">Migration Completed Successfully!</h3>
+          <p id="completion-summary-text" class="mb-3">
+            All selected users, calendars, contacts, and mailboxes have been synchronized.
+          </p>
+          <div class="download-actions">
+            <a id="btn-download-creds" href="/api/download/credentials" class="btn btn-primary" download>
+              📥 Download Provisioned Passwords CSV
+            </a>
+            <a id="btn-download-report" href="/api/download/report" class="btn btn-secondary" download>
+              📥 Download Full Audit Report (JSON)
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Activity Log -->
+      <div class="card">
+        <div class="log-header">
+          <h4 class="card-title">Live Activity Stream (Sanitized)</h4>
+          <span class="badge badge-neutral">Auto-scrolling</span>
+        </div>
+        <div id="log-terminal" class="terminal-box">
+          <div class="log-line text-muted">[System] Ready to begin live event stream...</div>
+        </div>
+      </div>
+
+      <div class="action-footer">
+        <div></div>
+        <button id="btn-new-migration" class="btn btn-secondary" style="display:none">
+          🔄 Start Another Migration
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
