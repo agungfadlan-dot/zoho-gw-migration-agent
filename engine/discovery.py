@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Organization Discovery & Pre-Migration Assessment Engine.
 
