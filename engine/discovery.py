@@ -132,6 +132,19 @@ class DiscoveryEngine:
 
             user_assessments.append(assessment)
 
+        # Extrapolate for unsampled active users if direct API didn't report per-user storage
+        sampled_assessments = [a for a in user_assessments if a.estimated_messages > 0 or a.estimated_storage_mb > 0]
+        if sampled_assessments and len(sampled_assessments) < len(zoho_users):
+            avg_msgs = sum(a.estimated_messages for a in sampled_assessments) / len(sampled_assessments)
+            avg_storage_mb = sum(a.estimated_storage_mb for a in sampled_assessments) / len(sampled_assessments)
+
+            for a in user_assessments:
+                if a.estimated_messages == 0 and a.estimated_storage_mb == 0:
+                    a.estimated_messages = int(avg_msgs)
+                    a.estimated_storage_mb = round(avg_storage_mb, 2)
+                    total_msgs += int(avg_msgs)
+                    total_storage_bytes += int(avg_storage_mb * 1024 * 1024)
+
         active_count = sum(1 for u in zoho_users if u.is_active)
         total_storage_mb = total_storage_bytes / (1024 * 1024)
 

@@ -193,6 +193,71 @@ class ZohoAdminClient:
             pass
         return None
 
+    @staticmethod
+    def _parse_single_storage_val(val: Any) -> int:
+        if val is None or val == "" or val == "-":
+            return 0
+        if isinstance(val, (int, float)):
+            # If float/int is small (< 1024), it represents GB (e.g. 29.58 GB from CSV/API)
+            if 0 < val <= 1024:
+                return int(val * 1024 * 1024 * 1024)
+            # If medium (< 1,000,000), it represents MB (e.g. 29580 MB)
+            if 1024 < val <= 1024 * 1024:
+                return int(val * 1024 * 1024)
+            return int(val)
+        if isinstance(val, str):
+            s = val.strip().lower()
+            if not s or s == "-":
+                return 0
+            try:
+                if "gb" in s:
+                    num = float(s.replace("gb", "").strip())
+                    return int(num * 1024 * 1024 * 1024)
+                if "mb" in s:
+                    num = float(s.replace("mb", "").strip())
+                    return int(num * 1024 * 1024)
+                if "kb" in s:
+                    num = float(s.replace("kb", "").strip())
+                    return int(num * 1024)
+                num = float(s)
+                if 0 < num <= 1024:
+                    return int(num * 1024 * 1024 * 1024)
+                if 1024 < num <= 1024 * 1024:
+                    return int(num * 1024 * 1024)
+                return int(num)
+            except ValueError:
+                return 0
+        return 0
+
+    @classmethod
+    def _parse_storage_bytes(cls, data: Dict[str, Any]) -> int:
+        """Extracts and parses storage bytes from a Zoho user dictionary."""
+        candidates = [
+            data.get("usedMailStorage"),
+            data.get("mailStorage"),
+            data.get("usedStorage"),
+            data.get("storageUsed"),
+            data.get("storage"),
+            data.get("size"),
+            data.get("consumedStorage"),
+            data.get("storageDetails"),
+            data.get("diskUsage"),
+        ]
+        for val in candidates:
+            if val is None or val == "" or val == "-":
+                continue
+            if isinstance(val, dict):
+                sub = val.get("used") or val.get("usedMailStorage") or val.get("mailStorage") or val.get("usedStorage")
+                if sub is not None:
+                    parsed = cls._parse_single_storage_val(sub)
+                    if parsed > 0:
+                        return parsed
+            else:
+                parsed = cls._parse_single_storage_val(val)
+                if parsed > 0:
+                    return parsed
+        return 0
+
     def list_organization_users(self) -> List[ZohoUser]:
         """Fetches all users from Zoho Organization Directory."""
         users: List[ZohoUser] = []
@@ -252,13 +317,7 @@ class ZohoAdminClient:
                                 elif isinstance(a, str):
                                     aliases.append(a.lower().strip())
 
-                        storage_bytes = int(
-                            u.get("usedMailStorage")
-                            or u.get("storageUsed")
-                            or u.get("usedStorage")
-                            or u.get("size")
-                            or 0
-                        )
+                        storage_bytes = self._parse_storage_bytes(u)
 
                         acc_id = str(u.get("accountId") or u.get("account_id") or u.get("zuid") or "")
                         first_name = u.get("firstName") or ""
