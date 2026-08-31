@@ -85,7 +85,7 @@ class DiscoveryEngine:
         total_msgs = 0
         total_storage_bytes = 0
 
-        for u in zoho_users:
+        for idx, u in enumerate(zoho_users):
             mb_used = u.storage_used_bytes / (1024 * 1024)
             total_storage_bytes += u.storage_used_bytes
 
@@ -97,13 +97,20 @@ class DiscoveryEngine:
                 estimated_storage_mb=mb_used,
             )
 
-            if sample_items and u.mailbox_account_id:
+            # Sample folders for users (first 25 or all if small org)
+            should_sample = sample_items and (idx < 25 or len(zoho_users) <= 30)
+            if should_sample and u.mailbox_account_id:
                 try:
                     folders = self.zoho_client.list_user_folders(u.mailbox_account_id)
                     assessment.folder_count = len(folders)
                     user_msg_count = sum(f.message_count for f in folders)
                     assessment.estimated_messages = user_msg_count
                     total_msgs += user_msg_count
+
+                    if assessment.estimated_storage_mb == 0 and user_msg_count > 0:
+                        est_bytes = user_msg_count * 100 * 1024  # ~100KB per message
+                        assessment.estimated_storage_mb = est_bytes / (1024 * 1024)
+                        total_storage_bytes += est_bytes
                 except Exception as e:
                     logger.warning(f"Could not inspect folders for {u.email}: {e}")
 
@@ -118,6 +125,10 @@ class DiscoveryEngine:
                     assessment.contacts_count = len(contacts)
                 except Exception:
                     pass
+            elif u.storage_used_bytes > 0:
+                est_msgs = max(1, int(u.storage_used_bytes / (100 * 1024)))
+                assessment.estimated_messages = est_msgs
+                total_msgs += est_msgs
 
             user_assessments.append(assessment)
 

@@ -61,6 +61,10 @@ class TestZohoClient(unittest.TestCase):
         token_resp.read.return_value = json.dumps({"access_token": "1000.mock_token", "expires_in": 3600}).encode("utf-8")
         token_resp.__enter__.return_value = token_resp
 
+        org_resp = MagicMock()
+        org_resp.read.return_value = json.dumps({"data": {"orgId": "org_98765"}}).encode("utf-8")
+        org_resp.__enter__.return_value = org_resp
+
         users_resp = MagicMock()
         users_resp.read.return_value = json.dumps({
             "data": [
@@ -79,7 +83,7 @@ class TestZohoClient(unittest.TestCase):
         }).encode("utf-8")
         users_resp.__enter__.return_value = users_resp
 
-        mock_urlopen.side_effect = [token_resp, users_resp]
+        mock_urlopen.side_effect = [token_resp, org_resp, users_resp]
 
         users = self.client.list_organization_users()
         self.assertEqual(len(users), 1)

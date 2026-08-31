@@ -169,56 +169,132 @@ class ZohoAdminClient:
                 "user_count": len(data) if isinstance(data, list) else 1,
             }
 
+    def get_organization_id(self) -> Optional[str]:
+        """Retrieves the organization ID (zoid) from Zoho Mail."""
+        try:
+            resp = self._api_request("/api/organization")
+            data = resp.get("data", {})
+            if isinstance(data, dict):
+                org_id = data.get("orgId") or data.get("zoid") or data.get("organizationId")
+                if org_id:
+                    return str(org_id)
+        except Exception:
+            pass
+
+        try:
+            resp = self._api_request("/api/accounts")
+            data = resp.get("data", [])
+            if isinstance(data, list):
+                for acc in data:
+                    org_id = acc.get("zoid") or acc.get("orgId") or acc.get("organizationId")
+                    if org_id:
+                        return str(org_id)
+        except Exception:
+            pass
+        return None
+
     def list_organization_users(self) -> List[ZohoUser]:
         """Fetches all users from Zoho Organization Directory."""
         users: List[ZohoUser] = []
-        start_index = 1
-        limit = 100
+        zoid = self.get_organization_id()
 
-        try:
-            while True:
-                resp = self._api_request(f"/api/organization/users?start={start_index}&limit={limit}")
-                user_list = resp.get("data", [])
-                if not user_list:
+        # Candidate endpoint formats supported across Zoho Mail versions
+        endpoints_to_try = []
+        if zoid:
+            endpoints_to_try.extend([
+                f"/api/organization/{zoid}/accounts",
+                f"/api/organization/{zoid}/users",
+                f"/api/organization/{zoid}/mailaccounts",
+            ])
+        endpoints_to_try.extend([
+            "/api/organization/accounts",
+            "/api/organization/users",
+            "/api/accounts",
+        ])
+
+        for ep_base in endpoints_to_try:
+            start_index = 1
+            limit = 100
+            collected: List[ZohoUser] = []
+            try:
+                while True:
+                    delim = "&" if "?" in ep_base else "?"
+                    url = f"{ep_base}{delim}start={start_index}&limit={limit}"
+                    resp = self._api_request(url)
+                    user_list = resp.get("data", [])
+                    if not user_list:
+                        break
+
+                    if isinstance(user_list, dict):
+                        user_list = [user_list]
+
+                    for u in user_list:
+                        email = (
+                            u.get("primaryEmailAddress")
+                            or u.get("mailboxAddress")
+                            or u.get("email")
+                            or u.get("emailAddress")
+                            or u.get("accountName", "")
+                        ).lower().strip()
+
+                        if not email or "@" not in email:
+                            continue
+
+                        # Extract aliases
+                        raw_aliases = u.get("aliasList") or u.get("aliases") or []
+                        aliases = []
+                        if isinstance(raw_aliases, list):
+                            for a in raw_aliases:
+                                if isinstance(a, dict):
+                                    ae = a.get("aliasEmail") or a.get("email")
+                                    if ae:
+                                        aliases.append(ae.lower().strip())
+                                elif isinstance(a, str):
+                                    aliases.append(a.lower().strip())
+
+                        storage_bytes = int(
+                            u.get("usedMailStorage")
+                            or u.get("storageUsed")
+                            or u.get("usedStorage")
+                            or u.get("size")
+                            or 0
+                        )
+
+                        acc_id = str(u.get("accountId") or u.get("account_id") or u.get("zuid") or "")
+                        first_name = u.get("firstName") or ""
+                        last_name = u.get("lastName") or ""
+                        disp_name = (
+                            u.get("displayName")
+                            or f"{first_name} {last_name}".strip()
+                            or u.get("accountName")
+                            or email.split("@")[0]
+                        )
+
+                        user_obj = ZohoUser(
+                            zuid=str(u.get("zuid") or acc_id),
+                            email=email,
+                            first_name=first_name,
+                            last_name=last_name,
+                            display_name=disp_name,
+                            role=u.get("role") or ("admin" if u.get("isAdmin") else "member"),
+                            is_active=bool(u.get("accountStatus", u.get("isActive", True))),
+                            aliases=aliases,
+                            mailbox_account_id=acc_id,
+                            storage_used_bytes=storage_bytes,
+                        )
+                        collected.append(user_obj)
+
+                    if len(user_list) < limit:
+                        break
+                    start_index += limit
+
+                if collected:
+                    users = collected
+                    logger.info(f"Discovered {len(users)} organization users from Zoho endpoint: {ep_base}")
                     break
-
-                for u in user_list:
-                    # Extract aliases
-                    aliases = [a.get("aliasEmail") for a in u.get("aliasList", []) if a.get("aliasEmail")]
-                    user_obj = ZohoUser(
-                        zuid=str(u.get("zuid", "")),
-                        email=u.get("primaryEmailAddress", "").lower().strip(),
-                        first_name=u.get("firstName", ""),
-                        last_name=u.get("lastName", ""),
-                        display_name=u.get("displayName", f"{u.get('firstName', '')} {u.get('lastName', '')}".strip()),
-                        role=u.get("role", "member"),
-                        is_active=bool(u.get("accountStatus", True)),
-                        aliases=aliases,
-                        mailbox_account_id=str(u.get("accountId", "")) or str(u.get("zuid", "")),
-                        storage_used_bytes=int(u.get("usedMailStorage", 0)),
-                    )
-                    users.append(user_obj)
-
-                if len(user_list) < limit:
-                    break
-                start_index += limit
-        except ZohoClientError as e:
-            logger.warning(f"Could not list users from /api/organization/users: {e}. Falling back to /api/accounts.")
-            resp = self._api_request("/api/accounts")
-            accounts = resp.get("data", [])
-            for a in accounts:
-                users.append(ZohoUser(
-                    zuid=str(a.get("accountId", "")),
-                    email=a.get("primaryEmailAddress", a.get("mailboxAddress", "")).lower().strip(),
-                    first_name=a.get("accountName", "User"),
-                    last_name="",
-                    display_name=a.get("accountName", "User"),
-                    role="admin",
-                    is_active=True,
-                    aliases=[],
-                    mailbox_account_id=str(a.get("accountId", "")),
-                    storage_used_bytes=0,
-                ))
+            except ZohoClientError as err:
+                logger.debug(f"Zoho endpoint {ep_base} returned error: {err}. Trying next candidate.")
+                continue
 
         logger.info(f"Discovered {len(users)} organization users from Zoho Directory.")
         return users
@@ -232,12 +308,14 @@ class ZohoAdminClient:
         folders: List[MailFolder] = []
 
         for f in folder_list:
+            count = int(f.get("totalCount") or f.get("messageCount") or f.get("count") or 0)
+            unread = int(f.get("unreadCount") or f.get("unread") or 0)
             folders.append(MailFolder(
                 folder_id=str(f.get("folderId", "")),
                 folder_name=f.get("folderName", ""),
                 folder_path=f.get("folderPath", f.get("folderName", "")),
-                message_count=int(f.get("totalCount", 0)),
-                unread_count=int(f.get("unreadCount", 0)),
+                message_count=count,
+                unread_count=unread,
             ))
 
         return folders

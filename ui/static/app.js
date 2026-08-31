@@ -345,11 +345,20 @@ document.addEventListener("DOMContentLoaded", () => {
       recommendedPilotEmails = res.data.recommended_pilot_cohort || [];
 
       // Update Metric Cards
-      metricUsers.textContent = report.total_users || discoveredUsers.length;
-      metricMessages.textContent = (report.total_messages || 0).toLocaleString();
-      const mbSize = ((report.total_bytes || 0) / (1024 * 1024)).toFixed(1);
-      metricSize.textContent = mbSize > 1024 ? `${(mbSize/1024).toFixed(2)} GB` : `${mbSize} MB`;
-      metricItems.textContent = ((report.total_calendar_events || 0) + (report.total_contacts || 0)).toLocaleString();
+      metricUsers.textContent = report.total_users || discoveredUsers.length || 0;
+      const totalMsgs = report.total_estimated_messages ?? report.total_messages ?? 0;
+      metricMessages.textContent = totalMsgs.toLocaleString();
+
+      let mbSize = report.total_estimated_storage_mb;
+      if (mbSize === undefined && report.total_bytes !== undefined) {
+        mbSize = report.total_bytes / (1024 * 1024);
+      }
+      mbSize = mbSize || 0;
+      metricSize.textContent = mbSize >= 1024 ? `${(mbSize/1024).toFixed(2)} GB` : `${mbSize.toFixed(1)} MB`;
+
+      const totalCal = report.total_calendar_events ?? discoveredUsers.reduce((acc, u) => acc + (u.calendar_events_count || 0), 0);
+      const totalCont = report.total_contacts ?? discoveredUsers.reduce((acc, u) => acc + (u.contacts_count || 0), 0);
+      metricItems.textContent = (totalCal + totalCont).toLocaleString();
 
       if (recommendedPilotEmails.length > 0) {
         pilotRecommendationText.innerHTML = `
