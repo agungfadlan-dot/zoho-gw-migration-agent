@@ -92,9 +92,16 @@
         <div class="guidance-body">
           <div class="guidance-col">
             <h4>Zoho API Console (Source)</h4>
+            <ol>
               <li>Go to <a href="https://api-console.zoho.com" target="_blank">api-console.zoho.com</a> and add a <strong>Server-based Application</strong> or <strong>Self-Client</strong>.</li>
-              <li>Add read-only scopes: <code>ZohoMail.organization.accounts.READ</code>, <code>ZohoMail.accounts.READ</code>, <code>ZohoMail.messages.READ</code>, <code>ZohoCalendar.event.READ</code>, <code>ZohoContacts.contactapi.READ</code>.</li>
+              <li>Generate Code with required read-only scopes:
+                <div style="margin-top: 6px; display: flex; gap: 8px; align-items: center;">
+                  <input type="text" readonly id="scope-copy-input" style="font-size: 11px; padding: 4px 8px; flex: 1; font-family: monospace; border: 1px solid var(--border-color); border-radius: 4px;" value="ZohoMail.organization.accounts.READ,ZohoMail.accounts.READ,ZohoMail.messages.READ,ZohoMail.folders.READ,ZohoDirectory.users.READ,ZohoCalendar.event.READ,ZohoContacts.contactapi.READ" />
+                  <button type="button" class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px; white-space: nowrap;" onclick="navigator.clipboard.writeText(document.getElementById('scope-copy-input').value); alert('Copied scopes to clipboard!');">📋 Copy Scopes</button>
+                </div>
+              </li>
               <li>Generate Client ID, Client Secret, and Refresh Token.</li>
+            </ol>
           </div>
           <div class="guidance-col">
             <h4>Google Cloud & DWD (Destination)</h4>
@@ -325,8 +332,24 @@
           </button>
         </div>
 
-        <div class="selection-summary">
-          <span id="selection-count-badge" class="badge badge-info">1 User Selected</span>
+        <div class="selection-summary" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between;">
+          <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+            <span id="selection-count-badge" class="badge badge-info">1 User Selected</span>
+            <div style="display: flex; gap: 12px; align-items: center; margin-left: 8px; border-left: 2px solid var(--border-color); padding-left: 12px;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                <input type="checkbox" id="chk-sync-mail" checked>
+                <span>📧 <strong>Mailbox (Email)</strong></span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                <input type="checkbox" id="chk-sync-calendar">
+                <span>📅 Calendar</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                <input type="checkbox" id="chk-sync-contacts">
+                <span>📇 Contacts</span>
+              </label>
+            </div>
+          </div>
           <div class="dry-run-toggle">
             <label class="switch">
               <input type="checkbox" id="chk-dry-run" checked>

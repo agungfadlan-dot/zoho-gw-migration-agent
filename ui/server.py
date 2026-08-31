@@ -303,6 +303,9 @@ class MigrationUIHandler(SimpleHTTPRequestHandler):
         body = self._read_json_body()
         dry_run = bool(body.get("dry_run", False))
         target_emails = body.get("target_emails", [])  # Empty means all users
+        skip_calendar = bool(body.get("skip_calendar", False))
+        skip_contacts = bool(body.get("skip_contacts", False))
+        skip_mailbox = bool(body.get("skip_mailbox", False))
 
         def on_pause_state_change(state: PauseState, reason: str):
             is_p = state in (PauseState.PAUSED_MANUAL, PauseState.PAUSED_NETWORK_LOST)
@@ -397,19 +400,34 @@ class MigrationUIHandler(SimpleHTTPRequestHandler):
                     active_users = selected_users
 
                 # Stage 2: Calendar Migration
-                MigrationUIHandler.last_progress_state["stage"] = "CALENDAR"
-                MigrationUIHandler.last_progress_state["stage_name"] = "Stage 2/4: Calendar Migration"
-                cal_summary = self.supervisor.run_stage_calendar(active_users, zoho_domain=domain, progress_callback=progress_cb)
+                if not skip_calendar:
+                    MigrationUIHandler.last_progress_state["stage"] = "CALENDAR"
+                    MigrationUIHandler.last_progress_state["stage_name"] = "Stage 2/4: Calendar Migration"
+                    cal_summary = self.supervisor.run_stage_calendar(active_users, zoho_domain=domain, progress_callback=progress_cb)
+                else:
+                    from atomic_agents.calendar_agent import CalendarSyncSummary
+                    cal_summary = CalendarSyncSummary(skipped=len(active_users))
+                    MigrationUIHandler.last_progress_state["log_messages"].append("Calendar migration skipped by configuration.")
 
                 # Stage 3: Contacts Migration
-                MigrationUIHandler.last_progress_state["stage"] = "CONTACTS"
-                MigrationUIHandler.last_progress_state["stage_name"] = "Stage 3/4: Contacts Migration"
-                cont_summary = self.supervisor.run_stage_contacts(active_users, zoho_domain=domain, progress_callback=progress_cb)
+                if not skip_contacts:
+                    MigrationUIHandler.last_progress_state["stage"] = "CONTACTS"
+                    MigrationUIHandler.last_progress_state["stage_name"] = "Stage 3/4: Contacts Migration"
+                    cont_summary = self.supervisor.run_stage_contacts(active_users, zoho_domain=domain, progress_callback=progress_cb)
+                else:
+                    from atomic_agents.contacts_agent import ContactsSyncSummary
+                    cont_summary = ContactsSyncSummary(skipped=len(active_users))
+                    MigrationUIHandler.last_progress_state["log_messages"].append("Contacts migration skipped by configuration.")
 
                 # Stage 4: Mailbox Streaming
-                MigrationUIHandler.last_progress_state["stage"] = "MAILBOX"
-                MigrationUIHandler.last_progress_state["stage_name"] = "Stage 4/4: Mailbox Streaming"
-                mail_summary = self.supervisor.run_stage_mailbox(active_users, zoho_domain=domain, progress_callback=progress_cb)
+                if not skip_mailbox:
+                    MigrationUIHandler.last_progress_state["stage"] = "MAILBOX"
+                    MigrationUIHandler.last_progress_state["stage_name"] = "Stage 4/4: Mailbox Streaming"
+                    mail_summary = self.supervisor.run_stage_mailbox(active_users, zoho_domain=domain, progress_callback=progress_cb)
+                else:
+                    from atomic_agents.mailbox_agent import MailboxSyncSummary
+                    mail_summary = MailboxSyncSummary()
+                    MigrationUIHandler.last_progress_state["log_messages"].append("Mailbox migration skipped by configuration.")
 
                 # Generate JSON Audit Report
                 audit_file = f"migration_audit_report_{int(time.time())}.json"

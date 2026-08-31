@@ -36,7 +36,7 @@ class EphemeralVault:
     and memory zeroing.
     """
 
-    def __init__(self, ttl_seconds: int = 3600):
+    def __init__(self, ttl_seconds: int = 86400):
         self._ttl_seconds = ttl_seconds
         self._created_at = time.time()
         self._last_accessed = time.time()
@@ -46,11 +46,17 @@ class EphemeralVault:
         self._master_key: bytearray = bytearray(secrets.token_bytes(32))
         self._store: Dict[str, Tuple[bytes, bytes, bytes]] = {}  # key -> (ciphertext, nonce/iv, tag)
 
+    def touch(self) -> None:
+        """Resets the last accessed timestamp to extend active session."""
+        if not self._is_purged:
+            self._last_accessed = time.time()
+
     def _check_ttl(self) -> None:
         """Enforces session time-to-live expiration."""
         if self._is_purged:
             raise EphemeralVaultError("Vault has been purged. Credential session is terminated.")
         now = time.time()
+        # Expire if total lifetime exceeds TTL or if idle for more than TTL
         if now - self._created_at > self._ttl_seconds:
             self.purge()
             raise EphemeralVaultError(f"Vault session expired after {self._ttl_seconds} seconds.")

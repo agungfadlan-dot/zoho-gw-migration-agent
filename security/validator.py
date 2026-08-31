@@ -25,6 +25,8 @@ APPROVED_ZOHO_READ_SCOPES = {
     "ZohoMail.organization.accounts.ALL",
     "ZohoMail.accounts.READ",
     "ZohoMail.accounts.ALL",
+    "ZohoMail.folders.READ",
+    "ZohoMail.folders.ALL",
     "ZohoMail.messages.READ",
     "ZohoMail.messages.ALL",
     "ZohoMail.partner.organization.READ",
@@ -35,6 +37,9 @@ APPROVED_ZOHO_READ_SCOPES = {
     "ZohoContacts.contacts.READ",
     "ZohoContacts.user.READ",
     "ZohoDirectory.user.READ",
+    "ZohoDirectory.users.READ",
+    "ZohoDirectory.user.ALL",
+    "ZohoDirectory.users.ALL",
     "ZohoDirectory.org.READ",
 }
 

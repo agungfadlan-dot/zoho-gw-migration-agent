@@ -63,10 +63,25 @@ def parse_args():
         help="Limit migration to the first N discovered users for pilot testing (e.g. --pilot 5)"
     )
     parser.add_argument(
-        "--checkpoint-db",
-        type=str,
-        default="migration_checkpoint.db",
-        help="Path to SQLite migration checkpoint database (default: migration_checkpoint.db)"
+        "--skip-calendar",
+        action="store_true",
+        help="Skip Zoho Calendar event synchronization"
+    )
+    parser.add_argument(
+        "--skip-contacts",
+        action="store_true",
+        help="Skip Zoho Address Book contact synchronization"
+    )
+    parser.add_argument(
+        "--mail-only",
+        action="store_true",
+        help="Only migrate mailboxes (equivalent to --skip-calendar --skip-contacts)"
+    )
+    parser.add_argument(
+        "--vault-ttl",
+        type=int,
+        default=86400,
+        help="In-memory credential vault TTL in seconds (default: 86400 / 24 hours)"
     )
     parser.add_argument(
         "-y", "--yes",
@@ -88,8 +103,8 @@ def main():
     if args.dry_run:
         print(f"{Colors.YELLOW}{Colors.BOLD}>>> RUNNING IN DRY-RUN MODE (No changes will be made to Google Workspace) <<<{Colors.RESET}\n")
 
-    # Initialize in-memory security vault with 2-hour TTL
-    with EphemeralVault(ttl_seconds=7200) as vault:
+    # Initialize in-memory security vault with configurable TTL (default: 24h)
+    with EphemeralVault(ttl_seconds=args.vault_ttl) as vault:
         try:
             # Step 1: Collect credentials interactively into memory vault
             collect_zoho_credentials(vault)
@@ -102,7 +117,9 @@ def main():
                 dry_run=args.dry_run,
                 target_users_str=args.users,
                 users_file=args.users_file,
-                pilot_count=args.pilot
+                pilot_count=args.pilot,
+                skip_calendar=args.skip_calendar or args.mail_only,
+                skip_contacts=args.skip_contacts or args.mail_only,
             )
 
             # Step 3: Pre-flight Verification

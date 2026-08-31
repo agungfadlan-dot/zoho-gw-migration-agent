@@ -518,12 +518,19 @@ document.addEventListener("DOMContentLoaded", () => {
     btnCancelMigration.disabled = false;
 
     try {
+      const chkMail = document.getElementById("chk-sync-mail");
+      const chkCal = document.getElementById("chk-sync-calendar");
+      const chkCont = document.getElementById("chk-sync-contacts");
+
       const resp = await fetch("/api/migrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dry_run: dryRun,
-          target_emails: targetEmails
+          target_emails: targetEmails,
+          skip_mailbox: chkMail ? !chkMail.checked : false,
+          skip_calendar: chkCal ? !chkCal.checked : false,
+          skip_contacts: chkCont ? !chkCont.checked : false
         })
       });
       const data = await resp.json();

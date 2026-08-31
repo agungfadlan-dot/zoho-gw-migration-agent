@@ -40,6 +40,9 @@ class MigrationWorkflow:
         target_users_str: Optional[str] = None,
         users_file: Optional[str] = None,
         pilot_count: Optional[int] = None,
+        skip_calendar: bool = False,
+        skip_contacts: bool = False,
+        skip_mailbox: bool = False,
     ):
         self.vault = vault
         self.checkpoint_db_path = checkpoint_db_path
@@ -47,6 +50,9 @@ class MigrationWorkflow:
         self.target_users_str = target_users_str
         self.users_file = users_file
         self.pilot_count = pilot_count
+        self.skip_calendar = skip_calendar
+        self.skip_contacts = skip_contacts
+        self.skip_mailbox = skip_mailbox
 
         self.progress_cb = TerminalProgressCallback()
 
@@ -228,20 +234,42 @@ class MigrationWorkflow:
             print(f"\n{Colors.BOLD}{Colors.GREEN}✓ One-time temporary passwords saved to '{prov_summary.credentials_csv_path}'.{Colors.RESET}")
             print(f"{Colors.RED}{Colors.BOLD}WARNING: Distribute these credentials securely to users and delete this file.{Colors.RESET}")
 
+        # Determine active users available for downstream sync
+        if not self.dry_run:
+            user_status_map = {u["email"]: u["status"] for u in self.supervisor.checkpoint_store.get_all_users()}
+            active_users = [u for u in target_users if user_status_map.get(u.email.lower().strip()) in ("CREATED", "EXISTING")]
+            if len(active_users) < len(target_users):
+                skipped_count = len(target_users) - len(active_users)
+                print(f"\n{Colors.YELLOW}Notice: Proceeding with {len(active_users)} active Google Workspace account(s). ({skipped_count} user(s) skipped due to missing Google Workspace licenses).{Colors.RESET}")
+        else:
+            active_users = target_users
+
         # Stage 2: Calendar Migration (Atomic Agent 4)
-        print_stage_header(4, "Stage 2: Google Calendar Migration", "Executing CalendarMigrationAgent.")
-        cal_summary_obj = self.supervisor.run_stage_calendar(target_users, zoho_domain=domain, progress_callback=self.progress_cb)
-        cal_summary = cal_summary_obj.to_dict()
+        if not self.skip_calendar:
+            print_stage_header(4, "Stage 2: Google Calendar Migration", "Executing CalendarMigrationAgent.")
+            cal_summary_obj = self.supervisor.run_stage_calendar(active_users, zoho_domain=domain, progress_callback=self.progress_cb)
+            cal_summary = cal_summary_obj.to_dict()
+        else:
+            print(f"\n{Colors.CYAN}ℹ️  Stage 2: Calendar Migration skipped (--skip-calendar / --mail-only active).{Colors.RESET}")
+            cal_summary = {"synced": 0, "skipped": len(active_users), "failed": 0, "user_results": {}}
 
         # Stage 3: Contacts Migration (Atomic Agent 5)
-        print_stage_header(5, "Stage 3: Google Contacts Migration", "Executing ContactsMigrationAgent.")
-        cont_summary_obj = self.supervisor.run_stage_contacts(target_users, zoho_domain=domain, progress_callback=self.progress_cb)
-        cont_summary = cont_summary_obj.to_dict()
+        if not self.skip_contacts:
+            print_stage_header(5, "Stage 3: Google Contacts Migration", "Executing ContactsMigrationAgent.")
+            cont_summary_obj = self.supervisor.run_stage_contacts(active_users, zoho_domain=domain, progress_callback=self.progress_cb)
+            cont_summary = cont_summary_obj.to_dict()
+        else:
+            print(f"\n{Colors.CYAN}ℹ️  Stage 3: Contacts Migration skipped (--skip-contacts / --mail-only active).{Colors.RESET}")
+            cont_summary = {"synced": 0, "skipped": len(active_users), "failed": 0, "user_results": {}}
 
         # Stage 4: Mailbox Streaming Migration (Atomic Agent 6)
-        print_stage_header(6, "Stage 4: Mailbox & Messages Streaming", "Executing MailboxStreamingAgent.")
-        mail_summary_obj = self.supervisor.run_stage_mailbox(target_users, zoho_domain=domain, progress_callback=self.progress_cb)
-        mail_summary = mail_summary_obj.to_dict()
+        if not self.skip_mailbox:
+            print_stage_header(6, "Stage 4: Mailbox & Messages Streaming", "Executing MailboxStreamingAgent.")
+            mail_summary_obj = self.supervisor.run_stage_mailbox(active_users, zoho_domain=domain, progress_callback=self.progress_cb)
+            mail_summary = mail_summary_obj.to_dict()
+        else:
+            print(f"\n{Colors.CYAN}ℹ️  Stage 4: Mailbox Streaming skipped.{Colors.RESET}")
+            mail_summary = {"synced_messages": 0, "skipped_messages": 0, "failed_messages": 0, "bytes_transferred": 0, "user_results": {}}
 
         # Final Summary
         self.render_completion_summary(report, provision_results, cal_summary, cont_summary, mail_summary)
