@@ -104,6 +104,23 @@ class DiscoveryEngine:
                     folders = self.zoho_client.list_user_folders(u.mailbox_account_id)
                     assessment.folder_count = len(folders)
                     user_msg_count = sum(f.message_count for f in folders)
+
+                    # If Zoho returned 0 in folder metadata, sample the first few folders directly
+                    if user_msg_count == 0 and folders:
+                        for f in folders[:3]:
+                            try:
+                                sample_msgs = self.zoho_client.list_folder_messages(
+                                    account_id=u.mailbox_account_id,
+                                    folder_id=f.folder_id,
+                                    start=1,
+                                    limit=20
+                                )
+                                if sample_msgs:
+                                    f.message_count = max(len(sample_msgs), f.message_count)
+                                    user_msg_count += len(sample_msgs)
+                            except Exception:
+                                pass
+
                     assessment.estimated_messages = user_msg_count
                     total_msgs += user_msg_count
 

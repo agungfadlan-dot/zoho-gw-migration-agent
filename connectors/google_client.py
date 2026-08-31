@@ -362,7 +362,7 @@ class GoogleWorkspaceAdminClient:
         # Gmail import upload endpoint (Multipart upload)
         upload_url = (
             f"https://gmail.googleapis.com/upload/gmail/v1/users/{user_email}/messages/import"
-            f"?internalDateSource=dateHeader&neverMarkSpam=true&processForCalendar=false"
+            f"?uploadType=multipart&internalDateSource=dateHeader&neverMarkSpam=true&processForCalendar=false"
         )
 
         metadata: Dict[str, Any] = {
@@ -391,15 +391,31 @@ class GoogleWorkspaceAdminClient:
             "Content-Length": str(len(multipart_body)),
         }
 
-        res = self._request(
-            upload_url,
-            method="POST",
-            data=multipart_body,
-            headers=headers,
-            subject_email=user_email,
-            scopes=scopes,
-        )
-        return res
+        try:
+            res = self._request(
+                upload_url,
+                method="POST",
+                data=multipart_body,
+                headers=headers,
+                subject_email=user_email,
+                scopes=scopes,
+            )
+            return res
+        except GoogleClientError as e:
+            # Fallback to users.messages.insert
+            logger.debug(f"Gmail messages.import failed for {user_email}: {e}. Retrying with messages.insert.")
+            insert_url = (
+                f"https://gmail.googleapis.com/upload/gmail/v1/users/{user_email}/messages"
+                f"?uploadType=multipart&internalDateSource=dateHeader"
+            )
+            return self._request(
+                insert_url,
+                method="POST",
+                data=multipart_body,
+                headers=headers,
+                subject_email=user_email,
+                scopes=scopes,
+            )
 
     # Alias for explicit naming
     import_message_rfc822 = import_message

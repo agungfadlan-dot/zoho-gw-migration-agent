@@ -220,7 +220,9 @@ class MailboxStreamingAgent(AtomicAgent[MailboxStreamingRequest, MailboxStreamin
                             lambda: input_data.zoho_client.stream_raw_message_rfc822(
                                 user_email=user.email,
                                 account_id=user.mailbox_account_id,
-                                message_id=msg.message_id
+                                message_id=msg.message_id,
+                                folder_id=folder.folder_id,
+                                msg_meta=msg
                             ),
                             pause_controller=input_data.pause_controller
                         )

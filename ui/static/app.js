@@ -396,14 +396,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const isChecked = selectedUserEmails.has(u.email);
       const isPilot = recommendedPilotEmails.includes(u.email);
-      const mb = (u.mailbox_size_bytes / (1024 * 1024)).toFixed(1);
+      
+      let mb = "0.0";
+      if (u.estimated_storage_mb !== undefined && u.estimated_storage_mb !== null && !isNaN(u.estimated_storage_mb)) {
+        mb = Number(u.estimated_storage_mb).toFixed(1);
+      } else if (u.mailbox_size_bytes !== undefined && u.mailbox_size_bytes !== null && !isNaN(u.mailbox_size_bytes)) {
+        mb = (Number(u.mailbox_size_bytes) / (1024 * 1024)).toFixed(1);
+      } else if (u.storage_used_bytes !== undefined && u.storage_used_bytes !== null && !isNaN(u.storage_used_bytes)) {
+        mb = (Number(u.storage_used_bytes) / (1024 * 1024)).toFixed(1);
+      }
+
+      const msgCount = u.estimated_messages !== undefined ? u.estimated_messages : (u.total_messages || u.message_count || 0);
 
       const row = document.createElement("tr");
       row.innerHTML = `
         <td><input type="checkbox" class="user-row-chk" data-email="${u.email}" ${isChecked ? "checked" : ""}></td>
         <td><strong>${fullName}</strong></td>
         <td><code>${u.email}</code></td>
-        <td>${(u.total_messages || 0).toLocaleString()}</td>
+        <td>${Number(msgCount).toLocaleString()}</td>
         <td>${mb} MB</td>
         <td>${isPilot ? '<span class="badge badge-secure">⭐ Pilot Pick</span>' : '<span class="badge badge-neutral">Standard</span>'}</td>
       `;

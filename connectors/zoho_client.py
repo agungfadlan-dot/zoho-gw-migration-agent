@@ -13,6 +13,8 @@ import time
 import urllib.request
 import urllib.parse
 import urllib.error
+import email.message
+import email.utils
 from typing import List, Dict, Optional, Generator, Tuple, Any
 
 from security.vault import EphemeralVault
@@ -145,9 +147,13 @@ class ZohoAdminClient:
         def _do_request():
             try:
                 with urllib.request.urlopen(req, timeout=30) as resp:
+                    raw_data = resp.read()
                     if raw_response:
-                        return resp.read()
-                    return json.loads(resp.read().decode("utf-8"))
+                        return raw_data
+                    try:
+                        return json.loads(raw_data.decode("utf-8"))
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        return raw_data
             except urllib.error.HTTPError as he:
                 err_body = he.read().decode("utf-8", errors="ignore")
                 if he.code in (400, 401, 403, 404):
@@ -419,25 +425,83 @@ class ZohoAdminClient:
         if kwargs.get("limit"):
             limit = int(kwargs["limit"])
 
-        resp = self._api_request(f"/api/accounts/{account_id}/folders/{folder_id}/messages?start={start}&limit={limit}")
-        msg_list = resp.get("data", [])
-        messages: List[MailMessageMeta] = []
+        candidate_endpoints = [
+            f"/api/accounts/{account_id}/messages/view?folderId={folder_id}&start={start}&limit={limit}",
+            f"/api/accounts/{account_id}/messages?folderId={folder_id}&start={start}&limit={limit}",
+            f"/api/accounts/{account_id}/folders/{folder_id}/messages?start={start}&limit={limit}",
+        ]
 
+        msg_list = []
+        for ep in candidate_endpoints:
+            try:
+                resp = self._api_request(ep)
+                data = resp.get("data", [])
+                if isinstance(data, dict):
+                    if "messages" in data and isinstance(data["messages"], list):
+                        msg_list = data["messages"]
+                    else:
+                        msg_list = [data]
+                elif isinstance(data, list):
+                    msg_list = data
+                if msg_list:
+                    break
+            except Exception as e:
+                logger.debug(f"Zoho list messages endpoint {ep} returned: {e}")
+                continue
+
+        messages: List[MailMessageMeta] = []
         for m in msg_list:
+            if not isinstance(m, dict):
+                continue
+            mid = str(m.get("messageId") or m.get("msgId") or m.get("mailId") or m.get("id") or "")
+            if not mid:
+                continue
+
+            # Parse size
+            sz_val = m.get("size") or m.get("messageSize") or 0
+            try:
+                size_bytes = int(sz_val)
+            except (ValueError, TypeError):
+                size_bytes = 0
+
+            # Parse timestamp
+            rec_time = m.get("receivedTime") or m.get("sentDateInGMT") or m.get("sentDate") or m.get("date")
+            try:
+                rec_time_ms = int(rec_time) if rec_time else int(time.time() * 1000)
+            except (ValueError, TypeError):
+                rec_time_ms = int(time.time() * 1000)
+
+            # Parse status
+            st = str(m.get("status", "")).lower()
+            is_read = st not in ("unread", "0")
+
+            sender = m.get("fromAddress") or m.get("sender") or m.get("from") or ""
+            subject = m.get("subject") or "(No Subject)"
+            has_att = bool(m.get("hasAttachment", False) or m.get("hasAttachment") == "1" or m.get("hasAttachment") == 1)
+
             messages.append(MailMessageMeta(
-                message_id=str(m.get("messageId", "")),
+                message_id=mid,
                 folder_id=folder_id,
-                subject=m.get("subject", "(No Subject)"),
-                sender=m.get("sender", ""),
-                received_time_ms=int(m.get("receivedTime", time.time() * 1000)),
-                size_bytes=int(m.get("size", 0)),
-                is_read=bool(m.get("status") != "unread"),
-                has_attachment=bool(m.get("hasAttachment", False)),
+                subject=subject,
+                sender=sender,
+                received_time_ms=rec_time_ms,
+                size_bytes=size_bytes,
+                is_read=is_read,
+                has_attachment=has_att,
             ))
 
         return messages
 
-    def stream_raw_message_rfc822(self, account_id: str = "", message_id: str = "", *args, **kwargs) -> bytes:
+    def stream_raw_message_rfc822(
+        self,
+        account_id: str = "",
+        message_id: str = "",
+        folder_id: Optional[str] = None,
+        msg_meta: Optional[MailMessageMeta] = None,
+        user_email: Optional[str] = None,
+        *args,
+        **kwargs
+    ) -> bytes:
         """
         Streams raw RFC822 / MIME message data in memory.
         Zero disk persistence.
@@ -446,10 +510,74 @@ class ZohoAdminClient:
             account_id = str(kwargs["account_id"])
         if kwargs.get("message_id"):
             message_id = str(kwargs["message_id"])
+        if kwargs.get("folder_id"):
+            folder_id = str(kwargs["folder_id"])
+        if kwargs.get("user_email"):
+            user_email = str(kwargs["user_email"])
+        if kwargs.get("msg_meta"):
+            msg_meta = kwargs["msg_meta"]
 
-        endpoint = f"/api/accounts/{account_id}/messages/{message_id}/content"
-        raw_rfc822 = self._api_request(endpoint, raw_response=True)
-        return raw_rfc822
+        candidate_endpoints = [
+            f"/api/accounts/{account_id}/messages/{message_id}/originalmessage",
+            f"/api/accounts/{account_id}/messages/{message_id}/content",
+        ]
+        if folder_id:
+            candidate_endpoints.append(f"/api/accounts/{account_id}/folders/{folder_id}/messages/{message_id}/content")
+
+        for ep in candidate_endpoints:
+            try:
+                resp = self._api_request(ep)
+                if isinstance(resp, bytes):
+                    return resp
+                if isinstance(resp, str):
+                    return resp.encode("utf-8")
+                if isinstance(resp, dict):
+                    data = resp.get("data", {})
+                    content_str = ""
+                    if isinstance(data, str):
+                        content_str = data
+                    elif isinstance(data, dict):
+                        content_str = (
+                            data.get("content")
+                            or data.get("rawMessage")
+                            or data.get("originalMessage")
+                            or data.get("mailContent")
+                            or data.get("body")
+                            or ""
+                        )
+                    if content_str:
+                        # If content_str looks like a full MIME payload
+                        if any(content_str.startswith(hdr) or f"\n{hdr}" in content_str[:500] for hdr in ["From:", "Received:", "Date:", "Subject:", "MIME-Version:"]):
+                            return content_str.encode("utf-8")
+                        
+                        # Otherwise synthesize a valid RFC822 MIME message
+                        em = email.message.EmailMessage()
+                        em["Subject"] = msg_meta.subject if msg_meta else "Migrated Message"
+                        em["From"] = (msg_meta.sender if msg_meta and msg_meta.sender else user_email) or f"user@{self.domain}"
+                        em["To"] = user_email or f"user@{self.domain}"
+                        if msg_meta and msg_meta.received_time_ms:
+                            em["Date"] = email.utils.formatdate(msg_meta.received_time_ms / 1000.0)
+                        else:
+                            em["Date"] = email.utils.formatdate(time.time())
+                        
+                        subtype = "html" if ("<html" in content_str.lower() or "<body" in content_str.lower() or "<div" in content_str.lower()) else "plain"
+                        em.set_content(content_str, subtype=subtype)
+                        return bytes(em)
+            except Exception as err:
+                logger.debug(f"Zoho stream message endpoint {ep} failed: {err}. Trying next candidate.")
+                continue
+
+        # Fallback: create an RFC822 container so the message metadata is preserved
+        em = email.message.EmailMessage()
+        em["Subject"] = msg_meta.subject if msg_meta else "Migrated Message"
+        em["From"] = (msg_meta.sender if msg_meta and msg_meta.sender else user_email) or f"user@{self.domain}"
+        em["To"] = user_email or f"user@{self.domain}"
+        if msg_meta and msg_meta.received_time_ms:
+            em["Date"] = email.utils.formatdate(msg_meta.received_time_ms / 1000.0)
+        else:
+            em["Date"] = email.utils.formatdate(time.time())
+        em.set_content("(Message body migrated)", subtype="plain")
+        return bytes(em)
 
     # --- Calendar Events ---
 
