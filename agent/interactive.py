@@ -11,6 +11,7 @@ import os
 import sys
 import getpass
 import json
+import re
 from typing import Dict, Any, Optional
 
 from security.vault import EphemeralVault
@@ -92,11 +93,14 @@ def collect_google_credentials(vault: EphemeralVault) -> str:
         except Exception as e:
             print(f"{Colors.RED}Error validating Service Account JSON: {e}{Colors.RESET}")
 
-    admin_email = input("Enter Google Workspace Super Admin email (for DWD directory provisioning): ").strip()
-    while not admin_email or "@" not in admin_email:
-        admin_email = input(f"{Colors.RED}Valid admin email is required: {Colors.RESET}").strip()
+    admin_raw = input("Enter Google Workspace Super Admin email (for DWD directory provisioning): ").strip()
+    match = re.search(r"[\w\.-]+@[a-zA-Z0-9\.-]+", admin_raw)
+    while not match:
+        admin_raw = input(f"{Colors.RED}Valid admin email is required: {Colors.RESET}").strip()
+        match = re.search(r"[\w\.-]+@[a-zA-Z0-9\.-]+", admin_raw)
 
+    admin_email = match.group(0).lower()
     vault.store("google_admin_email", admin_email)
 
-    print(f"{Colors.GREEN}✓ Google Workspace Service Account verified and stored in Ephemeral Vault.{Colors.RESET}")
+    print(f"{Colors.GREEN}✓ Google Workspace Service Account verified and stored in Ephemeral Vault (Admin: {admin_email}).{Colors.RESET}")
     return admin_email

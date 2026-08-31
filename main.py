@@ -155,15 +155,25 @@ def main():
                 )
 
                 if args.import_zip:
+                    zip_path = os.path.expanduser(args.import_zip)
+                    if not os.path.isfile(zip_path):
+                        print(f"{Colors.RED}Export ZIP file not found at: {zip_path}{Colors.RESET}")
+                        print("Please verify the file path and try again.")
+                        sys.exit(1)
+
                     target_email = args.user
                     if not target_email:
                         target_email = input(f"{Colors.CYAN}Enter target Google Workspace user email for this ZIP: {Colors.RESET}").strip()
-                    if not target_email:
-                        print(f"{Colors.RED}Target user email is required for --import-zip.{Colors.RESET}")
+                    
+                    import re
+                    match = re.search(r"[\w\.-]+@[a-zA-Z0-9\.-]+", target_email or "")
+                    if not match:
+                        print(f"{Colors.RED}Valid target user email is required for --import-zip.{Colors.RESET}")
                         sys.exit(1)
+                    target_email = match.group(0).lower()
 
-                    print(f"\n{Colors.GREEN}Streaming archive '{args.import_zip}' into {target_email}...{Colors.RESET}")
-                    res = importer.import_user_zip(args.import_zip, target_email)
+                    print(f"\n{Colors.GREEN}Streaming archive '{zip_path}' into {target_email}...{Colors.RESET}")
+                    res = importer.import_user_zip(zip_path, target_email)
                     print(f"\n{Colors.GREEN}{Colors.BOLD}Import Completed for {target_email}:{Colors.RESET}")
                     print(f"  • Synced: {res['synced']} messages")
                     print(f"  • Skipped (Already Synced): {res['skipped']} messages")
@@ -172,8 +182,14 @@ def main():
                     print(f"  • Duration: {res['elapsed_seconds']}s")
 
                 elif args.import_dir:
-                    print(f"\n{Colors.GREEN}Scanning directory '{args.import_dir}' and importing all user archives...{Colors.RESET}")
-                    results = importer.import_directory(args.import_dir)
+                    dir_path = os.path.expanduser(args.import_dir)
+                    if not os.path.isdir(dir_path):
+                        print(f"{Colors.RED}Export directory not found at: {dir_path}{Colors.RESET}")
+                        print(f"Tip: Create the directory (`mkdir -p {dir_path}`) and place your downloaded Zoho ZIP export files inside it, or point --import-dir to the correct folder.")
+                        sys.exit(1)
+
+                    print(f"\n{Colors.GREEN}Scanning directory '{dir_path}' and importing all user archives...{Colors.RESET}")
+                    results = importer.import_directory(dir_path)
                     print(f"\n{Colors.GREEN}{Colors.BOLD}Bulk Import Summary:{Colors.RESET}")
                     for uemail, r in results.items():
                         print(f"  • {uemail}: {r.get('synced', 0)} synced, {r.get('skipped', 0)} skipped, {r.get('failed', 0)} failed ({r.get('status', 'DONE')})")
