@@ -230,6 +230,18 @@ class GoogleWorkspaceAdminClient:
                 "error": str(e),
             }
 
+    def get_user(self, email: str) -> Optional[Dict[str, Any]]:
+        """Retrieves user details from Google Workspace Directory API."""
+        scopes = ["https://www.googleapis.com/auth/admin.directory.user.readonly"]
+        url = f"https://admin.googleapis.com/admin/directory/v1/users/{urllib.parse.quote(email.lower().strip())}"
+        try:
+            return self._request(url, subject_email=self.admin_subject_email, scopes=scopes)
+        except GoogleClientError as e:
+            if "404" in str(e) or "not found" in str(e).lower() or "resourcenotfound" in str(e).lower():
+                return None
+            logger.debug(f"Could not retrieve user {email} from Google Directory: {e}")
+            return None
+
     # --- User Provisioning ---
 
     def provision_user(
@@ -285,9 +297,20 @@ class GoogleWorkspaceAdminClient:
                 "temp_password": temp_pwd,  # Provided once for admin report, never stored in DB
             }
         except GoogleClientError as e:
-            if "409" in str(e) or "duplicate" in str(e).lower() or "already exists" in str(e).lower():
+            err_str = str(e).lower()
+            if "409" in err_str or "duplicate" in err_str or "already exists" in err_str or "entityalreadyexists" in err_str or "condition not met" in err_str:
                 logger.info(f"User {email} already exists in Google Workspace. Skipping creation.")
-                return {"status": "EXISTS", "email": email}
+                return {"status": "EXISTING", "email": email}
+
+            # Check if the user already exists in Google Workspace
+            try:
+                existing_user = self.get_user(email)
+                if existing_user and existing_user.get("primaryEmail"):
+                    logger.info(f"User {email} confirmed to already exist in Google Workspace.")
+                    return {"status": "EXISTING", "email": email}
+            except Exception:
+                pass
+
             raise e
 
     def add_user_alias(self, primary_email: str, alias_email: str) -> None:

@@ -237,10 +237,10 @@ class MigrationWorkflow:
         # Determine active users available for downstream sync
         if not self.dry_run:
             user_status_map = {u["email"]: u["status"] for u in self.supervisor.checkpoint_store.get_all_users()}
-            active_users = [u for u in target_users if user_status_map.get(u.email.lower().strip()) in ("CREATED", "EXISTING")]
+            active_users = [u for u in target_users if user_status_map.get(u.email.lower().strip()) in ("CREATED", "EXISTING", "EXISTS", "SIMULATED_CREATED")]
             if len(active_users) < len(target_users):
                 skipped_count = len(target_users) - len(active_users)
-                print(f"\n{Colors.YELLOW}Notice: Proceeding with {len(active_users)} active Google Workspace account(s). ({skipped_count} user(s) skipped due to missing Google Workspace licenses).{Colors.RESET}")
+                print(f"\n{Colors.YELLOW}Notice: Proceeding with {len(active_users)} active Google Workspace account(s). ({skipped_count} user(s) skipped due to missing Google Workspace licenses or provisioning errors).{Colors.RESET}")
         else:
             active_users = target_users
 

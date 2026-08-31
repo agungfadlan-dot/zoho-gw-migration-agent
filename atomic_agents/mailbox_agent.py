@@ -67,7 +67,8 @@ class MailboxStreamingAgent(AtomicAgent[MailboxStreamingRequest, MailboxStreamin
         user_results = {}
 
         for user in input_data.users:
-            if not user.mailbox_account_id:
+            acc_id = user.mailbox_account_id or user.zuid
+            if not acc_id:
                 self.logger.warning(f"Skipping {user.email}: No Zoho mailbox account ID found.")
                 continue
 
@@ -75,7 +76,7 @@ class MailboxStreamingAgent(AtomicAgent[MailboxStreamingRequest, MailboxStreamin
             rate_limiter = TokenBucket(rate_per_second=2.5, capacity=5.0)
 
             try:
-                folders = input_data.zoho_client.list_user_folders(user.mailbox_account_id)
+                folders = input_data.zoho_client.list_user_folders(acc_id)
             except Exception as e:
                 self.logger.error(f"Failed to fetch folders for {user.email}: {e}")
                 user_results[user.email] = {"synced": 0, "skipped": 0, "failed": 1, "bytes": 0}
@@ -88,7 +89,8 @@ class MailboxStreamingAgent(AtomicAgent[MailboxStreamingRequest, MailboxStreamin
                 folders=folders,
                 label_map=label_map,
                 rate_limiter=rate_limiter,
-                input_data=input_data
+                input_data=input_data,
+                acc_id=acc_id
             )
 
             user_results[user.email] = {
@@ -148,7 +150,8 @@ class MailboxStreamingAgent(AtomicAgent[MailboxStreamingRequest, MailboxStreamin
         folders: List[MailFolder],
         label_map: Dict[str, str],
         rate_limiter: TokenBucket,
-        input_data: MailboxStreamingRequest
+        input_data: MailboxStreamingRequest,
+        acc_id: str
     ):
         u_synced = 0
         u_skipped = 0
@@ -171,7 +174,7 @@ class MailboxStreamingAgent(AtomicAgent[MailboxStreamingRequest, MailboxStreamin
                     messages = retry_with_backoff(
                         lambda: input_data.zoho_client.list_folder_messages(
                             user_email=user.email,
-                            account_id=user.mailbox_account_id,
+                            account_id=acc_id,
                             folder_id=folder.folder_id,
                             start=start,
                             limit=limit
@@ -219,7 +222,7 @@ class MailboxStreamingAgent(AtomicAgent[MailboxStreamingRequest, MailboxStreamin
                         raw_bytes = retry_with_backoff(
                             lambda: input_data.zoho_client.stream_raw_message_rfc822(
                                 user_email=user.email,
-                                account_id=user.mailbox_account_id,
+                                account_id=acc_id,
                                 message_id=msg.message_id,
                                 folder_id=folder.folder_id,
                                 msg_meta=msg

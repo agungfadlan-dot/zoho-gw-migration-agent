@@ -386,15 +386,45 @@ class MigrationUIHandler(SimpleHTTPRequestHandler):
                 if prov_summary.credentials_csv_path:
                     MigrationUIHandler.latest_credentials_csv = prov_summary.credentials_csv_path
 
+                # Log results of provisioning
+                for r in prov_summary.results:
+                    r_status = r.get("status")
+                    r_email = r.get("email")
+                    if r_status == "CREATED":
+                        MigrationUIHandler.last_progress_state["log_messages"].append(f"[Provisioned] Created user {r_email}")
+                    elif r_status in ("EXISTING", "EXISTS"):
+                        MigrationUIHandler.last_progress_state["log_messages"].append(f"[Existing] User {r_email} confirmed in Google Workspace.")
+                    elif r_status == "FAILED":
+                        MigrationUIHandler.last_progress_state["log_messages"].append(f"[Provisioning Failed] User {r_email}: {r.get('error')}")
+
                 # Filter active users that exist in Google Workspace
                 if not dry_run:
                     user_status_map = {u["email"]: u["status"] for u in self.supervisor.checkpoint_store.get_all_users()}
-                    active_users = [u for u in selected_users if user_status_map.get(u.email.lower().strip()) in ("CREATED", "EXISTING")]
+                    active_users = [
+                        u for u in selected_users
+                        if user_status_map.get(u.email.lower().strip()) in ("CREATED", "EXISTING", "EXISTS", "SIMULATED_CREATED")
+                    ]
+
+                    # Fallback recovery: check Google Workspace Directory directly if active_users is empty
+                    if not active_users and selected_users:
+                        google_client = self.supervisor.get_google_client()
+                        for u in selected_users:
+                            try:
+                                g_user = google_client.get_user(u.email)
+                                if g_user and g_user.get("primaryEmail"):
+                                    active_users.append(u)
+                                    self.supervisor.checkpoint_store.update_user_status(u.email, "EXISTING")
+                                    MigrationUIHandler.last_progress_state["log_messages"].append(
+                                        f"[Recovered] User {u.email} found active in Google Workspace Directory."
+                                    )
+                            except Exception:
+                                pass
+
                     if len(active_users) < len(selected_users):
                         skipped_count = len(selected_users) - len(active_users)
                         MigrationUIHandler.last_progress_state["log_messages"].append(
                             f"Notice: Proceeding with {len(active_users)} active Google Workspace account(s). "
-                            f"({skipped_count} user(s) skipped due to missing Google Workspace licenses)."
+                            f"({skipped_count} user(s) skipped due to missing Google Workspace account/licenses)."
                         )
                 else:
                     active_users = selected_users

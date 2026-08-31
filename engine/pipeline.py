@@ -108,7 +108,7 @@ class MigrationPipeline:
         summary = {
             "total": len(users),
             "created": sum(1 for r in results if r.get("status") == "CREATED"),
-            "existing": sum(1 for r in results if r.get("status") == "EXISTS"),
+            "existing": sum(1 for r in results if r.get("status") in ("EXISTS", "EXISTING")),
             "failed": sum(1 for r in results if r.get("status") == "FAILED"),
         }
         self.cb.on_stage_complete(stage_name, summary)

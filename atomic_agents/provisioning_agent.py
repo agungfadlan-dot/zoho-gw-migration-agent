@@ -93,14 +93,29 @@ class UserProvisioningAgent(AtomicAgent[ProvisioningRequest, ProvisioningSummary
                 if status == "CREATED":
                     created_count += 1
                     input_data.checkpoint_store.update_user_status(user.email, "CREATED")
-                elif status == "EXISTING":
+                elif status in ("EXISTING", "EXISTS"):
+                    existing_count += 1
+                    input_data.checkpoint_store.update_user_status(user.email, "EXISTING")
+                else:
                     existing_count += 1
                     input_data.checkpoint_store.update_user_status(user.email, "EXISTING")
                 results.append(res)
             except Exception as e:
-                failed_count += 1
                 error_str = str(e)
                 self.logger.error(f"Failed to provision {user.email}: {error_str}")
+                # Check if the user already exists in Google Workspace despite creation error
+                try:
+                    existing_user = input_data.google_client.get_user(user.email)
+                    if existing_user and existing_user.get("primaryEmail"):
+                        self.logger.info(f"User {user.email} confirmed existing in Google Workspace. Proceeding as EXISTING.")
+                        existing_count += 1
+                        input_data.checkpoint_store.update_user_status(user.email, "EXISTING")
+                        results.append({"status": "EXISTING", "email": user.email, "warning": error_str})
+                        continue
+                except Exception:
+                    pass
+
+                failed_count += 1
                 input_data.checkpoint_store.update_user_status(user.email, "FAILED", error_msg=error_str)
                 results.append({"status": "FAILED", "email": user.email, "error": error_str})
 
