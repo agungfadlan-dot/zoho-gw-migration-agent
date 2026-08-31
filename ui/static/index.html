@@ -92,11 +92,9 @@
         <div class="guidance-body">
           <div class="guidance-col">
             <h4>Zoho API Console (Source)</h4>
-            <ol>
-              <li>Go to <a href="https://api-console.zoho.com" target="_blank">api-console.zoho.com</a> and add a <strong>Server-based Application</strong>.</li>
-              <li>Add read-only scopes: <code>ZohoMail.accounts.READ</code>, <code>ZohoMail.messages.READ</code>, <code>ZohoDirectory.user.READ</code>, <code>ZohoCalendar.event.READ</code>, <code>ZohoContacts.user.READ</code>.</li>
+              <li>Go to <a href="https://api-console.zoho.com" target="_blank">api-console.zoho.com</a> and add a <strong>Server-based Application</strong> or <strong>Self-Client</strong>.</li>
+              <li>Add read-only scopes: <code>ZohoMail.organization.accounts.READ</code>, <code>ZohoMail.accounts.READ</code>, <code>ZohoMail.messages.READ</code>, <code>ZohoCalendar.event.READ</code>, <code>ZohoContacts.contactapi.READ</code>.</li>
               <li>Generate Client ID, Client Secret, and Refresh Token.</li>
-            </ol>
           </div>
           <div class="guidance-col">
             <h4>Google Cloud & DWD (Destination)</h4>

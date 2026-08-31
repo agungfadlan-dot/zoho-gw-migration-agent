@@ -91,9 +91,8 @@ Because global admin credentials hold elevated access across both organizations,
    - `ZohoMail.organization.accounts.READ`
    - `ZohoMail.accounts.READ`
    - `ZohoMail.messages.READ`
-   - `ZohoDirectory.user.READ`
    - `ZohoCalendar.event.READ`
-   - `ZohoContacts.user.READ`
+   - `ZohoContacts.contactapi.READ`
 4. Generate the **Client ID**, **Client Secret**, and **Refresh Token** (with `offline` access).
 
 ### 2. Google Cloud Service Account & DWD Setup (Destination)

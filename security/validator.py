@@ -22,13 +22,20 @@ VALID_ZOHO_DOMAINS = {
 # Approved read-only Zoho scopes for passwordless admin migration
 APPROVED_ZOHO_READ_SCOPES = {
     "ZohoMail.organization.accounts.READ",
+    "ZohoMail.organization.accounts.ALL",
     "ZohoMail.accounts.READ",
+    "ZohoMail.accounts.ALL",
     "ZohoMail.messages.READ",
+    "ZohoMail.messages.ALL",
     "ZohoMail.partner.organization.READ",
+    "ZohoCalendar.event.READ",
+    "ZohoCalendar.event.ALL",
+    "ZohoContacts.contactapi.READ",
+    "ZohoContacts.contactapi.ALL",
+    "ZohoContacts.contacts.READ",
+    "ZohoContacts.user.READ",
     "ZohoDirectory.user.READ",
     "ZohoDirectory.org.READ",
-    "ZohoCalendar.event.READ",
-    "ZohoContacts.user.READ",
 }
 
 # Forbidden Zoho scopes (destructive / unnecessary write access)
@@ -92,13 +99,20 @@ def audit_zoho_scopes(scopes: List[str]) -> Tuple[bool, List[str], List[str]]:
                 warnings.append(f"Scope '{s}' includes write/manage permissions. Verify if read-only alternative is available.")
 
     # Check if necessary read scopes are present
-    has_mail_read = any("ZohoMail" in s and "READ" in s.upper() for s in scope_set) or "ZohoMail.messages.ALL" in scope_set
-    has_dir_read = any("ZohoDirectory" in s and "READ" in s.upper() for s in scope_set) or "ZohoDirectory.user.ALL" in scope_set
+    has_mail_read = (
+        any("ZohoMail" in s and ("READ" in s.upper() or "ALL" in s.upper()) for s in scope_set)
+    )
+    has_dir_read = (
+        any("ZohoDirectory" in s and ("READ" in s.upper() or "ALL" in s.upper()) for s in scope_set)
+        or any("ZohoMail.organization.accounts" in s for s in scope_set)
+        or "ZohoMail.accounts.READ" in scope_set
+        or "ZohoMail.accounts.ALL" in scope_set
+    )
 
     if not has_mail_read:
         warnings.append("Missing Zoho Mail Read scope (e.g., ZohoMail.messages.READ or ZohoMail.organization.accounts.READ).")
     if not has_dir_read:
-        warnings.append("Missing Zoho Directory Read scope (e.g., ZohoDirectory.user.READ).")
+        warnings.append("Missing Zoho Organization/Directory Read scope (e.g., ZohoMail.organization.accounts.READ).")
 
     is_valid = len(errors) == 0
     return is_valid, warnings, errors
