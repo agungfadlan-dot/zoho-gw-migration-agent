@@ -43,6 +43,18 @@ ZOHO_MAIL_URLS = {
 
 class ZohoClientError(Exception):
     """Raised when Zoho API requests encounter an error."""
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class NonRetryableZohoError(ZohoClientError):
+    """Raised when Zoho returns client errors (400, 401, 403, 404) that should not be retried."""
+    pass
+
+
+class ZohoEndpointUnsupportedError(ZohoClientError):
+    """Raised when an endpoint is not supported or configured on Zoho Mail (e.g., 404 URL_RULE_NOT_CONFIGURED)."""
     pass
 
 
@@ -138,9 +150,19 @@ class ZohoAdminClient:
                     return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as he:
                 err_body = he.read().decode("utf-8", errors="ignore")
-                raise ZohoClientError(f"Zoho API Error {he.code} on {endpoint}: {err_body}")
+                if he.code in (400, 401, 403, 404):
+                    raise NonRetryableZohoError(f"Zoho API Error {he.code} on {endpoint}: {err_body}", status_code=he.code)
+                raise ZohoClientError(f"Zoho API Error {he.code} on {endpoint}: {err_body}", status_code=he.code)
 
-        return retry_with_backoff(_do_request, max_retries=3, initial_delay=1.0)
+        try:
+            return retry_with_backoff(
+                _do_request,
+                max_retries=3,
+                initial_delay=1.0,
+                retryable_exceptions=(ZohoClientError, urllib.error.URLError, TimeoutError, ConnectionError)
+            )
+        except NonRetryableZohoError as nre:
+            raise ZohoClientError(str(nre), status_code=nre.status_code) from nre
 
     # --- Directory Discovery ---
 
@@ -463,6 +485,8 @@ class ZohoAdminClient:
                 ))
             return events
         except ZohoClientError as e:
+            if "URL_RULE_NOT_CONFIGURED" in str(e) or getattr(e, "status_code", None) == 404:
+                raise ZohoEndpointUnsupportedError(f"Calendar endpoint is not configured on Zoho Mail API for {account_id}: {e}") from e
             logger.warning(f"Could not fetch calendar events for account {account_id}: {e}")
             return []
 
@@ -505,5 +529,7 @@ class ZohoAdminClient:
                 ))
             return contacts
         except ZohoClientError as e:
+            if "URL_RULE_NOT_CONFIGURED" in str(e) or getattr(e, "status_code", None) == 404:
+                raise ZohoEndpointUnsupportedError(f"Contacts endpoint is not configured on Zoho Mail API for {account_id}: {e}") from e
             logger.warning(f"Could not fetch contacts for account {account_id}: {e}")
             return []

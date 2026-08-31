@@ -6,7 +6,7 @@ Normalizes ISO 8601 & iCalendar RRULEs, imports events, and handles timezone map
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Callable
 from atomic_agents.base import AtomicAgent
-from connectors.zoho_client import ZohoAdminClient
+from connectors.zoho_client import ZohoAdminClient, ZohoEndpointUnsupportedError
 from connectors.google_client import GoogleWorkspaceAdminClient
 from connectors.base import ZohoUser
 from engine.checkpoint import CheckpointStore
@@ -61,7 +61,7 @@ class CalendarMigrationAgent(AtomicAgent[CalendarSyncRequest, CalendarSyncSummar
         user_results = {}
         rate_limiter = TokenBucket(rate_per_second=5.0, capacity=10.0)
 
-        for user in input_data.users:
+        for idx_user, user in enumerate(input_data.users, 1):
             if input_data.pause_controller:
                 input_data.pause_controller.wait_if_paused()
 
@@ -72,6 +72,14 @@ class CalendarMigrationAgent(AtomicAgent[CalendarSyncRequest, CalendarSyncSummar
             try:
                 acc_id = user.mailbox_account_id or user.zuid or user.email
                 events = input_data.zoho_client.list_calendar_events(account_id=acc_id, user_email=user.email)
+            except ZohoEndpointUnsupportedError as ue:
+                self.logger.info(
+                    f"Zoho Calendar API is not configured on this endpoint ({ue}). "
+                    f"Skipping calendar synchronization stage for all {len(input_data.users)} user(s)."
+                )
+                for rem_user in input_data.users[idx_user - 1:]:
+                    user_results[rem_user.email] = {"synced": 0, "skipped": 0, "failed": 0}
+                break
             except Exception as e:
                 self.logger.error(f"Failed to fetch calendar events for {user.email}: {e}")
                 user_results[user.email] = {"synced": 0, "skipped": 0, "failed": 1}

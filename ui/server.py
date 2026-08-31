@@ -383,20 +383,33 @@ class MigrationUIHandler(SimpleHTTPRequestHandler):
                 if prov_summary.credentials_csv_path:
                     MigrationUIHandler.latest_credentials_csv = prov_summary.credentials_csv_path
 
+                # Filter active users that exist in Google Workspace
+                if not dry_run:
+                    user_status_map = {u["email"]: u["status"] for u in self.supervisor.checkpoint_store.get_all_users()}
+                    active_users = [u for u in selected_users if user_status_map.get(u.email.lower().strip()) in ("CREATED", "EXISTING")]
+                    if len(active_users) < len(selected_users):
+                        skipped_count = len(selected_users) - len(active_users)
+                        MigrationUIHandler.last_progress_state["log_messages"].append(
+                            f"Notice: Proceeding with {len(active_users)} active Google Workspace account(s). "
+                            f"({skipped_count} user(s) skipped due to missing Google Workspace licenses)."
+                        )
+                else:
+                    active_users = selected_users
+
                 # Stage 2: Calendar Migration
                 MigrationUIHandler.last_progress_state["stage"] = "CALENDAR"
                 MigrationUIHandler.last_progress_state["stage_name"] = "Stage 2/4: Calendar Migration"
-                cal_summary = self.supervisor.run_stage_calendar(selected_users, zoho_domain=domain, progress_callback=progress_cb)
+                cal_summary = self.supervisor.run_stage_calendar(active_users, zoho_domain=domain, progress_callback=progress_cb)
 
                 # Stage 3: Contacts Migration
                 MigrationUIHandler.last_progress_state["stage"] = "CONTACTS"
                 MigrationUIHandler.last_progress_state["stage_name"] = "Stage 3/4: Contacts Migration"
-                cont_summary = self.supervisor.run_stage_contacts(selected_users, zoho_domain=domain, progress_callback=progress_cb)
+                cont_summary = self.supervisor.run_stage_contacts(active_users, zoho_domain=domain, progress_callback=progress_cb)
 
                 # Stage 4: Mailbox Streaming
                 MigrationUIHandler.last_progress_state["stage"] = "MAILBOX"
                 MigrationUIHandler.last_progress_state["stage_name"] = "Stage 4/4: Mailbox Streaming"
-                mail_summary = self.supervisor.run_stage_mailbox(selected_users, zoho_domain=domain, progress_callback=progress_cb)
+                mail_summary = self.supervisor.run_stage_mailbox(active_users, zoho_domain=domain, progress_callback=progress_cb)
 
                 # Generate JSON Audit Report
                 audit_file = f"migration_audit_report_{int(time.time())}.json"
