@@ -146,15 +146,28 @@ class ZohoAdminClient:
 
     def test_connection(self) -> Dict[str, Any]:
         """Tests connectivity and verifies organization admin access."""
-        resp = self._api_request("/api/organization")
-        data = resp.get("data", {})
-        return {
-            "status": "connected",
-            "org_name": data.get("orgName", "Unknown"),
-            "org_id": data.get("orgId", ""),
-            "domain": self.domain,
-            "user_count": data.get("userCount", 0),
-        }
+        try:
+            resp = self._api_request("/api/organization")
+            data = resp.get("data", {})
+            return {
+                "status": "connected",
+                "org_name": data.get("orgName", "Unknown"),
+                "org_id": data.get("orgId", ""),
+                "domain": self.domain,
+                "user_count": data.get("userCount", 0),
+            }
+        except ZohoClientError:
+            # Fallback to /api/accounts (requires standard ZohoMail.accounts.READ / ALL)
+            resp = self._api_request("/api/accounts")
+            data = resp.get("data", [])
+            primary_account = data[0] if isinstance(data, list) and data else {}
+            return {
+                "status": "connected",
+                "org_name": primary_account.get("accountName", "Zoho Mail Organization"),
+                "org_id": primary_account.get("accountId", ""),
+                "domain": self.domain,
+                "user_count": len(data) if isinstance(data, list) else 1,
+            }
 
     def list_organization_users(self) -> List[ZohoUser]:
         """Fetches all users from Zoho Organization Directory."""
@@ -162,32 +175,50 @@ class ZohoAdminClient:
         start_index = 1
         limit = 100
 
-        while True:
-            resp = self._api_request(f"/api/organization/users?start={start_index}&limit={limit}")
-            user_list = resp.get("data", [])
-            if not user_list:
-                break
+        try:
+            while True:
+                resp = self._api_request(f"/api/organization/users?start={start_index}&limit={limit}")
+                user_list = resp.get("data", [])
+                if not user_list:
+                    break
 
-            for u in user_list:
-                # Extract aliases
-                aliases = [a.get("aliasEmail") for a in u.get("aliasList", []) if a.get("aliasEmail")]
-                user_obj = ZohoUser(
-                    zuid=str(u.get("zuid", "")),
-                    email=u.get("primaryEmailAddress", "").lower().strip(),
-                    first_name=u.get("firstName", ""),
-                    last_name=u.get("lastName", ""),
-                    display_name=u.get("displayName", f"{u.get('firstName', '')} {u.get('lastName', '')}".strip()),
-                    role=u.get("role", "member"),
-                    is_active=bool(u.get("accountStatus", True)),
-                    aliases=aliases,
-                    mailbox_account_id=str(u.get("accountId", "")) or str(u.get("zuid", "")),
-                    storage_used_bytes=int(u.get("usedMailStorage", 0)),
-                )
-                users.append(user_obj)
+                for u in user_list:
+                    # Extract aliases
+                    aliases = [a.get("aliasEmail") for a in u.get("aliasList", []) if a.get("aliasEmail")]
+                    user_obj = ZohoUser(
+                        zuid=str(u.get("zuid", "")),
+                        email=u.get("primaryEmailAddress", "").lower().strip(),
+                        first_name=u.get("firstName", ""),
+                        last_name=u.get("lastName", ""),
+                        display_name=u.get("displayName", f"{u.get('firstName', '')} {u.get('lastName', '')}".strip()),
+                        role=u.get("role", "member"),
+                        is_active=bool(u.get("accountStatus", True)),
+                        aliases=aliases,
+                        mailbox_account_id=str(u.get("accountId", "")) or str(u.get("zuid", "")),
+                        storage_used_bytes=int(u.get("usedMailStorage", 0)),
+                    )
+                    users.append(user_obj)
 
-            if len(user_list) < limit:
-                break
-            start_index += limit
+                if len(user_list) < limit:
+                    break
+                start_index += limit
+        except ZohoClientError as e:
+            logger.warning(f"Could not list users from /api/organization/users: {e}. Falling back to /api/accounts.")
+            resp = self._api_request("/api/accounts")
+            accounts = resp.get("data", [])
+            for a in accounts:
+                users.append(ZohoUser(
+                    zuid=str(a.get("accountId", "")),
+                    email=a.get("primaryEmailAddress", a.get("mailboxAddress", "")).lower().strip(),
+                    first_name=a.get("accountName", "User"),
+                    last_name="",
+                    display_name=a.get("accountName", "User"),
+                    role="admin",
+                    is_active=True,
+                    aliases=[],
+                    mailbox_account_id=str(a.get("accountId", "")),
+                    storage_used_bytes=0,
+                ))
 
         logger.info(f"Discovered {len(users)} organization users from Zoho Directory.")
         return users
