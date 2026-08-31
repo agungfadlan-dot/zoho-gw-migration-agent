@@ -75,7 +75,7 @@ class MailboxStreamingAgent(AtomicAgent[MailboxStreamingRequest, MailboxStreamin
             rate_limiter = TokenBucket(rate_per_second=2.5, capacity=5.0)
 
             try:
-                folders = input_data.zoho_client.list_user_folders(user.email, user.mailbox_account_id)
+                folders = input_data.zoho_client.list_user_folders(user.mailbox_account_id)
             except Exception as e:
                 self.logger.error(f"Failed to fetch folders for {user.email}: {e}")
                 user_results[user.email] = {"synced": 0, "skipped": 0, "failed": 1, "bytes": 0}

@@ -70,7 +70,8 @@ class ContactsMigrationAgent(AtomicAgent[ContactsSyncRequest, ContactsSyncSummar
             u_failed = 0
 
             try:
-                contacts = input_data.zoho_client.list_contacts(user.email)
+                acc_id = user.mailbox_account_id or user.zuid or user.email
+                contacts = input_data.zoho_client.list_contacts(account_id=acc_id)
             except Exception as e:
                 self.logger.error(f"Failed to fetch contacts for {user.email}: {e}")
                 user_results[user.email] = {"synced": 0, "skipped": 0, "failed": 1}

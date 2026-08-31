@@ -70,7 +70,8 @@ class CalendarMigrationAgent(AtomicAgent[CalendarSyncRequest, CalendarSyncSummar
             u_failed = 0
 
             try:
-                events = input_data.zoho_client.list_calendar_events(user.email)
+                acc_id = user.mailbox_account_id or user.zuid or user.email
+                events = input_data.zoho_client.list_calendar_events(account_id=acc_id, user_email=user.email)
             except Exception as e:
                 self.logger.error(f"Failed to fetch calendar events for {user.email}: {e}")
                 user_results[user.email] = {"synced": 0, "skipped": 0, "failed": 1}

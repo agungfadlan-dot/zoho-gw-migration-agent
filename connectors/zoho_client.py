@@ -301,8 +301,15 @@ class ZohoAdminClient:
 
     # --- Mailbox & Folders ---
 
-    def list_user_folders(self, account_id: str) -> List[MailFolder]:
+    def list_user_folders(self, account_id: str, *args, **kwargs) -> List[MailFolder]:
         """Lists mail folders for a given Zoho account."""
+        if args and str(args[0]).isdigit():
+            account_id = str(args[0])
+        elif kwargs.get("account_id"):
+            account_id = str(kwargs["account_id"])
+        elif kwargs.get("mailbox_account_id"):
+            account_id = str(kwargs["mailbox_account_id"])
+
         resp = self._api_request(f"/api/accounts/{account_id}/folders")
         folder_list = resp.get("data", [])
         folders: List[MailFolder] = []
@@ -320,8 +327,17 @@ class ZohoAdminClient:
 
         return folders
 
-    def list_folder_messages(self, account_id: str, folder_id: str, start: int = 1, limit: int = 100) -> List[MailMessageMeta]:
+    def list_folder_messages(self, account_id: str = "", folder_id: str = "", start: int = 1, limit: int = 100, *args, **kwargs) -> List[MailMessageMeta]:
         """Lists message headers/metadata in a folder."""
+        if kwargs.get("account_id"):
+            account_id = str(kwargs["account_id"])
+        if kwargs.get("folder_id"):
+            folder_id = str(kwargs["folder_id"])
+        if kwargs.get("start"):
+            start = int(kwargs["start"])
+        if kwargs.get("limit"):
+            limit = int(kwargs["limit"])
+
         resp = self._api_request(f"/api/accounts/{account_id}/folders/{folder_id}/messages?start={start}&limit={limit}")
         msg_list = resp.get("data", [])
         messages: List[MailMessageMeta] = []
@@ -340,19 +356,33 @@ class ZohoAdminClient:
 
         return messages
 
-    def stream_raw_message_rfc822(self, account_id: str, message_id: str) -> bytes:
+    def stream_raw_message_rfc822(self, account_id: str = "", message_id: str = "", *args, **kwargs) -> bytes:
         """
         Streams raw RFC822 / MIME message data in memory.
         Zero disk persistence.
         """
+        if kwargs.get("account_id"):
+            account_id = str(kwargs["account_id"])
+        if kwargs.get("message_id"):
+            message_id = str(kwargs["message_id"])
+
         endpoint = f"/api/accounts/{account_id}/messages/{message_id}/content"
         raw_rfc822 = self._api_request(endpoint, raw_response=True)
         return raw_rfc822
 
     # --- Calendar Events ---
 
-    def list_calendar_events(self, account_id: str, user_email: str) -> List[CalendarEvent]:
+    def list_calendar_events(self, account_id: str = "", user_email: Optional[str] = None, *args, **kwargs) -> List[CalendarEvent]:
         """Fetches user calendar events."""
+        if args and str(args[0]).isdigit():
+            account_id = str(args[0])
+        if kwargs.get("account_id"):
+            account_id = str(kwargs["account_id"])
+        if kwargs.get("user_email"):
+            user_email = str(kwargs["user_email"])
+        if not user_email and "@" in account_id:
+            user_email = account_id
+
         endpoint = f"/api/accounts/{account_id}/events"
         try:
             resp = self._api_request(endpoint)
@@ -370,7 +400,7 @@ class ZohoAdminClient:
                     location=ev.get("location"),
                     recurrence=ev.get("recurrence", []),
                     attendees=[a.get("email") for a in ev.get("attendees", []) if a.get("email")],
-                    organizer=ev.get("organizer", user_email),
+                    organizer=ev.get("organizer", user_email or ""),
                 ))
             return events
         except ZohoClientError as e:
@@ -379,8 +409,13 @@ class ZohoAdminClient:
 
     # --- Contacts ---
 
-    def list_contacts(self, account_id: str) -> List[ContactRecord]:
+    def list_contacts(self, account_id: str = "", *args, **kwargs) -> List[ContactRecord]:
         """Fetches user address book contacts."""
+        if args and str(args[0]).isdigit():
+            account_id = str(args[0])
+        if kwargs.get("account_id"):
+            account_id = str(kwargs["account_id"])
+
         endpoint = f"/api/accounts/{account_id}/contacts"
         try:
             resp = self._api_request(endpoint)
