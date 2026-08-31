@@ -36,6 +36,17 @@ class AuditReport:
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "is_compliant": self.is_compliant,
+            "zoho_org_name": self.zoho_org_name,
+            "zoho_org_id": self.zoho_org_id,
+            "google_service_account_email": self.google_service_account_email,
+            "checks_passed": self.checks_passed,
+            "warnings": self.warnings,
+            "errors": self.errors,
+        }
+
 
 class SecurityAuditorAgent(AtomicAgent[AuditRequest, AuditReport]):
     """
