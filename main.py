@@ -3,7 +3,7 @@
 Zoho to Google Workspace Migration Agent - Main CLI Entrypoint.
 
 Usage:
-  python3 main.py [--dry-run] [--checkpoint-db PATH] [-y]
+  python3 main.py [--ui] [--dry-run] [--import-zip PATH --user EMAIL] [--import-dir PATH]
 """
 
 import sys
@@ -19,6 +19,9 @@ from security.sanitizer import setup_secure_logger
 from agent.console import banner, Colors
 from agent.interactive import collect_zoho_credentials, collect_google_credentials
 from agent.workflow import MigrationWorkflow
+from connectors.google_client import GoogleWorkspaceAdminClient
+from engine.checkpoint import CheckpointStore
+from engine.bulk_importer import ZohoBulkZipImporter
 from ui.server import run_ui_server
 
 logger = setup_secure_logger("main")
@@ -43,6 +46,36 @@ def parse_args():
         "--dry-run",
         action="store_true",
         help="Simulate the migration without writing data to Google Workspace"
+    )
+    parser.add_argument(
+        "--checkpoint-db",
+        type=str,
+        default="migration_checkpoint.db",
+        help="Path to SQLite checkpoint database (default: migration_checkpoint.db)"
+    )
+    parser.add_argument(
+        "--import-zip",
+        type=str,
+        default=None,
+        help="Directly import a single Zoho export ZIP archive into Google Workspace without local extraction"
+    )
+    parser.add_argument(
+        "--import-dir",
+        type=str,
+        default=None,
+        help="Directly import an entire folder of Zoho export ZIP archives into Google Workspace in parallel"
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=5,
+        help="Number of concurrent worker threads for bulk import (default: 5)"
+    )
+    parser.add_argument(
+        "--user",
+        type=str,
+        default=None,
+        help="Target user email address for --import-zip"
     )
     parser.add_argument(
         "--users",
@@ -106,6 +139,48 @@ def main():
     # Initialize in-memory security vault with configurable TTL (default: 24h)
     with EphemeralVault(ttl_seconds=args.vault_ttl) as vault:
         try:
+            # Handle Bulk ZIP / Export Directory Importer Flow directly
+            if args.import_zip or args.import_dir:
+                print(f"{Colors.CYAN}{Colors.BOLD}=== Zoho Bulk Export Importer Pipeline ==={Colors.RESET}\n")
+                collect_google_credentials(vault)
+
+                google_client = GoogleWorkspaceAdminClient(vault=vault)
+                checkpoint_store = CheckpointStore(db_path=args.checkpoint_db)
+
+                importer = ZohoBulkZipImporter(
+                    google_client=google_client,
+                    checkpoint_store=checkpoint_store,
+                    max_workers=args.concurrency,
+                    dry_run=args.dry_run,
+                )
+
+                if args.import_zip:
+                    target_email = args.user
+                    if not target_email:
+                        target_email = input(f"{Colors.CYAN}Enter target Google Workspace user email for this ZIP: {Colors.RESET}").strip()
+                    if not target_email:
+                        print(f"{Colors.RED}Target user email is required for --import-zip.{Colors.RESET}")
+                        sys.exit(1)
+
+                    print(f"\n{Colors.GREEN}Streaming archive '{args.import_zip}' into {target_email}...{Colors.RESET}")
+                    res = importer.import_user_zip(args.import_zip, target_email)
+                    print(f"\n{Colors.GREEN}{Colors.BOLD}Import Completed for {target_email}:{Colors.RESET}")
+                    print(f"  • Synced: {res['synced']} messages")
+                    print(f"  • Skipped (Already Synced): {res['skipped']} messages")
+                    print(f"  • Failed: {res['failed']} messages")
+                    print(f"  • Data Streamed: {(res['bytes_streamed'] / (1024 * 1024)):.2f} MB")
+                    print(f"  • Duration: {res['elapsed_seconds']}s")
+
+                elif args.import_dir:
+                    print(f"\n{Colors.GREEN}Scanning directory '{args.import_dir}' and importing all user archives...{Colors.RESET}")
+                    results = importer.import_directory(args.import_dir)
+                    print(f"\n{Colors.GREEN}{Colors.BOLD}Bulk Import Summary:{Colors.RESET}")
+                    for uemail, r in results.items():
+                        print(f"  • {uemail}: {r.get('synced', 0)} synced, {r.get('skipped', 0)} skipped, {r.get('failed', 0)} failed ({r.get('status', 'DONE')})")
+
+                return
+
+            # Standard Agent Workflow
             # Step 1: Collect credentials interactively into memory vault
             collect_zoho_credentials(vault)
             collect_google_credentials(vault)

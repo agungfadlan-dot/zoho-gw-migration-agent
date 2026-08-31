@@ -20,6 +20,9 @@ from security.vault import EphemeralVault
 from security.sanitizer import setup_secure_logger
 from atomic_agents.supervisor import MigrationSupervisor
 from engine.pause_controller import PauseController, PauseState
+from connectors.google_client import GoogleWorkspaceAdminClient
+from engine.checkpoint import CheckpointStore
+from engine.bulk_importer import ZohoBulkZipImporter
 
 logger = setup_secure_logger("ui_server")
 
@@ -155,6 +158,8 @@ class MigrationUIHandler(SimpleHTTPRequestHandler):
                 self._handle_discover()
             elif path == "/api/migrate":
                 self._handle_migrate()
+            elif path == "/api/import/bulk":
+                self._handle_bulk_import()
             elif path == "/api/pause":
                 self._handle_pause()
             elif path == "/api/resume":
@@ -500,6 +505,105 @@ class MigrationUIHandler(SimpleHTTPRequestHandler):
         self._send_json_response(200, {
             "success": True,
             "message": f"Migration initiated for {len(selected_users)} user(s)."
+        })
+
+    def _handle_bulk_import(self):
+        """Streams Zoho Admin export ZIP archives into Google Workspace in background thread."""
+        if MigrationUIHandler.last_progress_state.get("is_running"):
+            self._send_error_json(400, "A migration or import run is already currently in progress.")
+            return
+
+        body = self._read_json_body()
+        zip_path = body.get("zip_path", "").strip()
+        directory_path = body.get("directory_path", "").strip()
+        target_email = body.get("target_email", "").strip()
+        dry_run = bool(body.get("dry_run", False))
+        concurrency = int(body.get("concurrency", 5))
+
+        if not zip_path and not directory_path:
+            self._send_error_json(400, "Must provide either zip_path or directory_path.")
+            return
+
+        if zip_path and not target_email:
+            self._send_error_json(400, "target_email is required when importing a single zip_path.")
+            return
+
+        try:
+            google_client = GoogleWorkspaceAdminClient(vault=self.vault)
+        except Exception as e:
+            self._send_error_json(400, f"Google Workspace client initialization failed: {e}")
+            return
+
+        checkpoint_db = body.get("checkpoint_db", "migration_checkpoint.db")
+        checkpoint_store = CheckpointStore(db_path=checkpoint_db)
+        importer = ZohoBulkZipImporter(
+            google_client=google_client,
+            checkpoint_store=checkpoint_store,
+            max_workers=concurrency,
+            dry_run=dry_run,
+        )
+
+        # Reset progress state for UI
+        MigrationUIHandler.last_progress_state = {
+            "stage": "BULK_IMPORT",
+            "stage_name": "Zoho Bulk Export Importer",
+            "percent": 0,
+            "current_user": target_email or "Batch Folder",
+            "item_current": 0,
+            "item_total": 0,
+            "detail": f"Starting bulk import (Dry Run: {dry_run})",
+            "log_messages": ["Initializing bulk archive streaming importer..."],
+            "is_running": True,
+            "is_completed": False,
+            "is_paused": False,
+            "pause_state": "RUNNING",
+            "pause_reason": "",
+            "network_online": True,
+            "summary": None,
+            "error": None,
+        }
+
+        def _progress_cb(data):
+            MigrationUIHandler.last_progress_state["item_current"] = data.get("synced", 0) + data.get("skipped", 0)
+            uemail = data.get("user_email", "")
+            msg = f"[{uemail}] Synced: {data.get('synced', 0)}, Skipped: {data.get('skipped', 0)}, Failed: {data.get('failed', 0)}"
+            MigrationUIHandler.last_progress_state["log_messages"].append(msg)
+            if len(MigrationUIHandler.last_progress_state["log_messages"]) > 200:
+                MigrationUIHandler.last_progress_state["log_messages"].pop(0)
+
+        def run_bulk_worker():
+            try:
+                if zip_path:
+                    res = importer.import_user_zip(zip_path, target_email, progress_callback=_progress_cb)
+                    MigrationUIHandler.last_progress_state["summary"] = {"single_user": res}
+                    MigrationUIHandler.last_progress_state["log_messages"].append(
+                        f"Completed import for {target_email}: {res['synced']} synced, {res['skipped']} skipped, {res['failed']} failed."
+                    )
+                elif directory_path:
+                    res = importer.import_directory(directory_path, progress_callback=_progress_cb)
+                    MigrationUIHandler.last_progress_state["summary"] = {"batch": res}
+                    MigrationUIHandler.last_progress_state["log_messages"].append(
+                        f"Completed bulk directory import for {len(res)} users."
+                    )
+                MigrationUIHandler.last_progress_state["percent"] = 100
+                MigrationUIHandler.last_progress_state["stage"] = "COMPLETED"
+                MigrationUIHandler.last_progress_state["stage_name"] = "Bulk Import Completed"
+                MigrationUIHandler.last_progress_state["is_completed"] = True
+            except Exception as exc:
+                logger.error(f"Bulk import worker failed: {exc}")
+                MigrationUIHandler.last_progress_state["stage"] = "FAILED"
+                MigrationUIHandler.last_progress_state["stage_name"] = "Bulk Import Failed"
+                MigrationUIHandler.last_progress_state["error"] = str(exc)
+                MigrationUIHandler.last_progress_state["log_messages"].append(f"FATAL ERROR: {exc}")
+            finally:
+                MigrationUIHandler.last_progress_state["is_running"] = False
+
+        thread = threading.Thread(target=run_bulk_worker, daemon=True)
+        thread.start()
+
+        self._send_json_response(200, {
+            "success": True,
+            "message": "Bulk import pipeline started in background."
         })
 
     def _handle_reset(self):
