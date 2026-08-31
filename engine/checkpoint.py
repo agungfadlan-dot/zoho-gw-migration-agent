@@ -143,6 +143,10 @@ class CheckpointStore:
             """, (user_email.lower().strip(), zoho_folder_id, folder_name, google_label_id))
             conn.commit()
 
+    def record_folder_mapping(self, user_email: str, zoho_folder_id: str, zoho_folder_name: str, google_label_id: str) -> None:
+        """Alias for save_folder_mapping."""
+        self.save_folder_mapping(user_email, zoho_folder_id, zoho_folder_name, google_label_id)
+
     def get_google_label_id(self, user_email: str, zoho_folder_id: str) -> Optional[str]:
         """Gets mapped Google label ID for a Zoho folder."""
         with self._get_conn() as conn:
@@ -152,6 +156,10 @@ class CheckpointStore:
             """, (user_email.lower().strip(), zoho_folder_id))
             row = cursor.fetchone()
             return row["google_label_id"] if row else None
+
+    def get_label_mapping(self, user_email: str, zoho_folder_id: str) -> Optional[str]:
+        """Alias for get_google_label_id."""
+        return self.get_google_label_id(user_email, zoho_folder_id)
 
     # --- Item Sync State ---
 

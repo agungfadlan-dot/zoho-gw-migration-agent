@@ -397,10 +397,37 @@ class ZohoAdminClient:
         elif kwargs.get("mailbox_account_id"):
             account_id = str(kwargs["mailbox_account_id"])
 
-        resp = self._api_request(f"/api/accounts/{account_id}/folders")
-        folder_list = resp.get("data", [])
-        folders: List[MailFolder] = []
+        zoid = self.get_organization_id()
+        candidate_endpoints = [
+            f"/api/accounts/{account_id}/folders",
+        ]
+        if zoid:
+            candidate_endpoints.extend([
+                f"/api/organization/{zoid}/accounts/{account_id}/folders",
+                f"/api/organization/{zoid}/users/{account_id}/folders",
+            ])
+        candidate_endpoints.append(f"/api/organization/accounts/{account_id}/folders")
 
+        folder_list = []
+        last_err = None
+        for ep in candidate_endpoints:
+            try:
+                resp = self._api_request(ep)
+                data = resp.get("data", [])
+                if isinstance(data, list) and data:
+                    folder_list = data
+                    break
+                elif isinstance(data, dict):
+                    folder_list = [data]
+                    break
+            except Exception as e:
+                last_err = e
+                continue
+
+        if not folder_list and last_err and not candidate_endpoints:
+            raise last_err
+
+        folders: List[MailFolder] = []
         for f in folder_list:
             count = int(f.get("totalCount") or f.get("messageCount") or f.get("count") or 0)
             unread = int(f.get("unreadCount") or f.get("unread") or 0)
