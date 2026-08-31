@@ -14,6 +14,7 @@ import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from typing import Optional, Dict, Any, List
+from dataclasses import is_dataclass, asdict
 
 from security.vault import EphemeralVault
 from security.sanitizer import setup_secure_logger
@@ -203,9 +204,10 @@ class MigrationUIHandler(SimpleHTTPRequestHandler):
         domain = self.vault.retrieve("zoho_domain") or "zoho.com"
         try:
             report = self.supervisor.run_security_audit(zoho_domain=domain)
+            report_data = report.to_dict() if hasattr(report, "to_dict") else asdict(report)
             self._send_json_response(200, {
                 "success": True,
-                "data": report.to_dict()
+                "data": report_data
             })
         except Exception as e:
             self._send_json_response(200, {
